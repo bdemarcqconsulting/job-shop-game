@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Job Shop Game</title>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{background:#EDEAE0;}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+const { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } = Recharts;
+
+// ── FIREBASE ──────────────────────────────────────────────────
+const firebaseConfig = {
+  databaseURL: "https://job-shop-game-default-rtdb.europe-west1.firebasedatabase.app"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ── CONSTANTS ─────────────────────────────────────────────────
+const ROUTINGS = {1:["A","B","C","D"],2:["B","C","D","A"],3:["C","D","A","B"],4:["A","B","B","C"]};
+const WCS = ["A","B","C","D"];
+const ROLES = ["scheduler","wc-a","wc-b","wc-c","wc-d","monitor"];
+const BUFFER_LIMIT = 5;
+const PC = {1:"#3B82F6",2:"#10B981",3:"#8B5CF6",4:"#F59E0B"};
+const SC = ["#2563EB","#2D7D52","#D4500A"];
+const AUTO_ORDER = ["monitor","wc-d","wc-c","wc-a"];
+
+// ── TRANSLATIONS ──────────────────────────────────────────────
+const I18N = {
+  fr:{
+    title:"Job Shop Game",sub:"Simulation de gestion de production",
+    create:"Créer",join:"Rejoindre",
+    yourName:"Votre prénom",code:"Code de session",codeHint:"ex: ABC123",
+    createBtn:"Créer la session",joinBtn:"Rejoindre",
+    shareCode:"Partagez ce code avec les participants",
+    lobby:"Lobby",waitStart:"En attente du démarrage…",start:"Démarrer",
+    scenario:"Scénario",scnNames:["","Traditionnel","Optimisé","DBR"],
+    day:"Journée",openDay:"Ouvrir la journée",closeDay:"Clôturer",
+    nextScn:"Scénario suivant",viewDeb:"Voir le débriefing",
+    deck:"Paquet",done:"Terminées",wip:"En-cours",buf:"Buffer B",
+    release:"Libérer",hold:"Retenir",proc:"Traiter",pass:"Passer",
+    submitted:"Soumis ✓",waitDay:"En attente de la prochaine journée…",
+    yourQ:"Votre file",emptyQ:"File vide",
+    flowDays:"Flow Days",relDay:"Jour libération",
+    stats:"Statistiques",min:"Min",max:"Max",avg:"Moy",
+    stddev:"Éc-type",median:"Médiane",count:"Cartes terminées",
+    csv:"Exporter CSV",pdf:"Imprimer / PDF",
+    noData:"Aucune donnée pour ce scénario",
+    bufOk:"Buffer OK → libération autorisée",bufFull:"Buffer plein → retenir",
+    goulot:"GOULOT",
+    actsIn:"Toutes les actions reçues",actsPend:"action(s) en attente",
+    scnDone:"Scénario terminé !",
+    comparison:"Comparaison des scénarios",
+    scatterT:"Flow Days vs Jour de libération",histoT:"Distribution des Flow Days",
+    fac:"Animateur",team:"Équipe",
+    enterName:"Entrez votre prénom",invalidCode:"Code invalide ou introuvable",
+    roleTaken:"Ce rôle est déjà pris",chooseRole:"Choisir un rôle",newSess:"Nouvelle session",
+    numTeams:"Équipes de jeu",cardsLeft:"restantes",
+    pickS2:"Choisissez la carte à libérer (top 6) :",deckEmpty:"Paquet vide",
+    autoPilot:"Pilote auto",autoPilotNote:"Rôle non assigné — géré automatiquement",
+    readyBtn:"Prêt à jouer →",
+    roles:{scheduler:"Scheduleur","wc-a":"Opérateur A","wc-b":"Opérateur B","wc-c":"Opérateur C","wc-d":"Opérateur D",monitor:"Moniteur de flux"},
+    rdesc:{scheduler:"Décide quelles cartes entrent dans le système","wc-a":"Traite les opérations au poste A","wc-b":"Traite les opérations au poste B (goulot)","wc-c":"Traite les opérations au poste C","wc-d":"Traite les opérations au poste D",monitor:"Suit les flux et visualise les résultats"},
+    welcome:{tag:"Outil pédagogique interactif",credit:"Concept original",author:"James R. Holt, Ph.D., PE",role:"Professeur, Engineering Management",univ:"Washington State University",contact:"jholt@wsu.edu",credit2:"Adaptation numérique — plateforme web interactive",author2:"Benoit Demarcq",role2:"Expert Supply Chain · Conseil · Formation · Management de transition",contact2:"bdemarcq.consulting@outlook.com",btn:"Commencer le jeu",subtitle:"Solving the NP Complete Scheduling Problem"},
+    ctx:{
+      title:"Bienvenue dans le Job Shop Game",tabs:["Le jeu","Mon rôle","Comment jouer"],
+      game:["Un atelier de production simplifié avec 4 postes (A, B, C, D) traite 4 types de produits. Chaque produit suit un routage différent et nécessite 4 opérations.","Le poste B est le goulot d'étranglement : il reçoit plus de travail que les autres. L'objectif est de comprendre comment les décisions de planification affectent le temps de passage (Flow Days)."],
+      scnTitles:["S1 — Traditionnel","S2 — Optimisé","S3 — DBR"],
+      scnTexts:["Libération aléatoire LIFO, 1 carte par jour. Ligne de base.","Le scheduleur choisit l'ordre de libération pour réduire les files.","Drum-Buffer-Rope : on libère uniquement si le buffer B est libre."],
+      howTitle:"Déroulement d'une journée",
+      steps:["L'animateur ouvre la journée (bouton vert)","Chaque opérateur clique 'Traiter' pour traiter sa carte, ou 'Passer'","Le scheduleur libère (ou retient) une carte du paquet","L'animateur clôture la journée — les cartes avancent automatiquement","On répète jusqu'à épuisement du paquet et des files","L'animateur lance le scénario suivant, puis le débriefing"],
+      roleDetails:{
+        scheduler:["Vous décidez quelle carte entre dans le système chaque jour","En S2 : choisissez parmi les 6 premières cartes pour optimiser le flux","En S3 : surveillez le buffer B — libérez seulement si buffer < 5","Objectif : minimiser les temps de passage"],
+        "wc-a":["Traitez 1 carte par jour au poste A","Cliquez 'Traiter' quand la journée est ouverte","Si votre file est vide, cliquez 'Passer'","Observez comment la file s'accumule selon les scénarios"],
+        "wc-b":["Vous êtes au GOULOT — le poste le plus chargé !","Traitez 1 carte par jour. Le buffer B est crucial","En S3, votre charge détermine si de nouvelles cartes sont libérées","Observez comment DBR régule votre charge de travail"],
+        "wc-c":["Traitez 1 carte par jour au poste C","Cliquez 'Traiter' quand la journée est ouverte","Comparez la taille de vos files entre scénarios","Observez l'effet du goulot en amont"],
+        "wc-d":["Traitez 1 carte par jour au poste D","Cliquez 'Traiter' quand la journée est ouverte","Votre poste est en fin de chaîne — observez le flux arrivant","Comparez les temps de passage entre scénarios"],
+        monitor:["Vous observez et enregistrez les résultats","Suivez les cartes terminées et leurs flow days","Les graphiques se mettent à jour en temps réel","Préparez-vous à animer le débriefing final"],
+      },
+    },
+  },
+  en:{
+    title:"Job Shop Game",sub:"Production Flow Simulation",
+    create:"Create",join:"Join",
+    yourName:"Your first name",code:"Session code",codeHint:"e.g. ABC123",
+    createBtn:"Create session",joinBtn:"Join",
+    shareCode:"Share this code with participants",
+    lobby:"Lobby",waitStart:"Waiting for game to start…",start:"Start game",
+    scenario:"Scenario",scnNames:["","Traditional","Optimized","DBR"],
+    day:"Day",openDay:"Open day",closeDay:"Close",
+    nextScn:"Next scenario",viewDeb:"View debrief",
+    deck:"Deck",done:"Completed",wip:"WIP",buf:"Buffer B",
+    release:"Release",hold:"Hold",proc:"Process",pass:"Skip",
+    submitted:"Submitted ✓",waitDay:"Waiting for next day…",
+    yourQ:"Your queue",emptyQ:"Empty queue",
+    flowDays:"Flow Days",relDay:"Release day",
+    stats:"Statistics",min:"Min",max:"Max",avg:"Avg",
+    stddev:"Std Dev",median:"Median",count:"Completed cards",
+    csv:"Export CSV",pdf:"Print / PDF",
+    noData:"No data for this scenario",
+    bufOk:"Buffer OK → release allowed",bufFull:"Buffer full → hold",
+    goulot:"BOTTLENECK",
+    actsIn:"All actions received",actsPend:"action(s) pending",
+    scnDone:"Scenario complete!",
+    comparison:"Scenario comparison",
+    scatterT:"Flow Days vs Release day",histoT:"Flow Days distribution",
+    fac:"Facilitator",team:"Team",
+    enterName:"Enter your first name",invalidCode:"Invalid or not found",
+    roleTaken:"This role is already taken",chooseRole:"Choose a role",newSess:"New session",
+    numTeams:"Teams",cardsLeft:"remaining",
+    pickS2:"Choose which card to release (top 6):",deckEmpty:"Deck empty",
+    autoPilot:"Auto-pilot",autoPilotNote:"Role unassigned — handled automatically",
+    readyBtn:"Ready to play →",
+    roles:{scheduler:"Scheduler","wc-a":"Operator A","wc-b":"Operator B","wc-c":"Operator C","wc-d":"Operator D",monitor:"Flow Monitor"},
+    rdesc:{scheduler:"Decides which cards enter the system","wc-a":"Processes operations at station A","wc-b":"Processes operations at station B (bottleneck)","wc-c":"Processes operations at station C","wc-d":"Processes operations at station D",monitor:"Tracks flow and visualizes results"},
+    welcome:{tag:"Interactive educational tool",credit:"Original concept",author:"James R. Holt, Ph.D., PE",role:"Professor, Engineering Management",univ:"Washington State University",contact:"jholt@wsu.edu",credit2:"Digital adaptation — interactive web platform",author2:"Benoit Demarcq",role2:"Expert Supply Chain · Conseil · Formation · Management de transition",contact2:"bdemarcq.consulting@outlook.com",btn:"Start the game",subtitle:"Solving the NP Complete Scheduling Problem"},
+    ctx:{
+      title:"Welcome to the Job Shop Game",tabs:["The game","My role","How to play"],
+      game:["A simplified production shop with 4 workstations (A, B, C, D) processes 4 product types. Each product follows a different routing and requires 4 operations.","Station B is the bottleneck: it receives more work than others. The goal is to understand how scheduling decisions affect flow time (Flow Days)."],
+      scnTitles:["S1 — Traditional","S2 — Optimized","S3 — DBR"],
+      scnTexts:["Random LIFO release, 1 card per day. Baseline.","Scheduler picks release order to reduce queues.","Drum-Buffer-Rope: release only if buffer B allows."],
+      howTitle:"How a day works",
+      steps:["Facilitator opens the day (green button)","Each operator clicks 'Process' or 'Skip'","Scheduler releases (or holds) a card from the deck","Facilitator closes the day — cards advance automatically","Repeat until deck and queues are empty","Facilitator starts next scenario, then debrief"],
+      roleDetails:{
+        scheduler:["You decide which card enters the system each day","In S2: choose from top 6 cards to optimize flow","In S3: watch buffer B — only release if buffer < 5","Goal: minimize flow times"],
+        "wc-a":["Process 1 card per day at station A","Click 'Process' when the day is open","If your queue is empty, click 'Skip'","Watch how queues build up across scenarios"],
+        "wc-b":["You are at the BOTTLENECK — the busiest station!","Process 1 card per day. Buffer B is critical","In S3, your workload controls new card releases","See how DBR regulates your workload"],
+        "wc-c":["Process 1 card per day at station C","Click 'Process' when the day is open","Compare queue sizes across scenarios","Observe the upstream bottleneck effect"],
+        "wc-d":["Process 1 card per day at station D","Click 'Process' when the day is open","Your station is at the end of the chain","Compare flow times across scenarios"],
+        monitor:["You observe and record results","Track completed cards and their flow days","Charts update in real time","Prepare to lead the final debrief"],
+      },
+    },
+  },
+};
+
+// ── GAME ENGINE ───────────────────────────────────────────────
+function shuffle(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
+function mkDeck(){return shuffle([1,2,3,4].flatMap(p=>Array.from({length:9},(_,i)=>({id:`P${p}-${i+1}`,product:p,copy:i+1,routing:[...ROUTINGS[p]],ops:ROUTINGS[p].map(wc=>({wc,processedDay:null,done:false})),currentOpIdx:-1,releaseDay:null,completedDay:null,flowDays:null}))));}
+function mkTeam(id,name){return{id,name,players:{},deck:mkDeck(),queues:{A:[],B:[],C:[],D:[]},completed:[],bufferB:0};}
+function calcBuf(team){return WCS.reduce((sum,wc)=>sum+(team.queues[wc]||[]).reduce((n,card)=>{let b=0;for(let i=card.currentOpIdx;i<card.routing.length;i++)if(card.routing[i]==="B")b++;return n+b;},0),0);}
+function applyDay(team,day,scenario,actions){
+  const t=JSON.parse(JSON.stringify(team));
+  const bufBefore=calcBuf(t);
+  WCS.forEach(wc=>{const role=`wc-${wc.toLowerCase()}`,act=actions[role];if(t.queues[wc].length>0&&(act==="process"||act==null)){const card=t.queues[wc].shift();card.ops[card.currentOpIdx].processedDay=day;card.ops[card.currentOpIdx].done=true;card.currentOpIdx++;if(card.currentOpIdx>=card.routing.length){card.completedDay=day;card.flowDays=day-card.releaseDay;t.completed.push(card);}else t.queues[card.routing[card.currentOpIdx]].push(card);}});
+  const sa=actions["scheduler"]||(scenario===3?"hold":"release");
+  if(t.deck.length>0){let rel=null;if(scenario===1&&sa==="release")rel=t.deck.shift();else if(scenario===2){if(sa.startsWith("release:")){const idx=t.deck.findIndex(c=>c.id===sa.slice(8));if(idx>=0)[rel]=t.deck.splice(idx,1);}else if(sa==="release")rel=t.deck.shift();}else if(scenario===3&&sa==="release"&&bufBefore<BUFFER_LIMIT)rel=t.deck.shift();if(rel){rel.releaseDay=day;rel.currentOpIdx=0;t.queues[rel.routing[0]].push(rel);}}
+  t.bufferB=calcBuf(t);
+  return t;
+}
+function computeStats(cards){const f=cards.map(c=>c.flowDays).filter(v=>v!=null).sort((a,b)=>a-b);if(!f.length)return null;const avg=f.reduce((a,b)=>a+b,0)/f.length;const med=f.length%2===0?(f[f.length/2-1]+f[f.length/2])/2:f[Math.floor(f.length/2)];return{min:f[0],max:f[f.length-1],avg:+(avg.toFixed(1)),stddev:+(Math.sqrt(f.reduce((a,v)=>a+Math.pow(v-avg,2),0)/f.length).toFixed(1)),median:med,count:f.length};}
+function genCode(){const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";return Array.from({length:6},()=>c[0|Math.random()*c.length]).join("");}
+function isAuto(team,role){return AUTO_ORDER.includes(role)&&!team.players[role];}
+function getHumanRoles(team){return ROLES.filter(r=>r!=="monitor"&&!isAuto(team,r));}
+
+// ── FIREBASE STORAGE ──────────────────────────────────────────
+async function saveSession(code,state){await db.ref(`sessions/jsg-${code}`).set(state);}
+async function loadSession(code){const snap=await db.ref(`sessions/jsg-${code}`).get();return snap.exists()?snap.val():null;}
+async function saveAction(code,team,role,day,action){await db.ref(`actions/jsg-${code}-${team}-${role}-${day}`).set({action,ts:Date.now()});}
+async function loadAllActions(code,teamId,day){const acts={};for(const role of ROLES){const snap=await db.ref(`actions/jsg-${code}-${teamId}-${role}-${day}`).get();if(snap.exists())acts[role]=snap.val().action;}return acts;}
+
+// ── STYLE TOKENS ──────────────────────────────────────────────
+const G={
+  bg:{background:"#EDEAE0",minHeight:"100vh",fontFamily:"system-ui,-apple-system,sans-serif",color:"#1A1A1A"},
+  hdr:{background:"#1B3A4B",color:"#fff",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8},
+  card:{background:"#fff",borderRadius:10,padding:16,border:"1px solid #D9D4C8"},
+  btn:(c="#1B3A4B")=>({background:c,color:"#fff",border:"none",borderRadius:6,padding:"9px 18px",cursor:"pointer",fontWeight:600,fontSize:13}),
+  ghost:{background:"transparent",color:"#1B3A4B",border:"1.5px solid #1B3A4B",borderRadius:6,padding:"8px 16px",cursor:"pointer",fontWeight:600,fontSize:13},
+  inp:{width:"100%",padding:"10px 12px",border:"1.5px solid #D9D4C8",borderRadius:6,fontSize:14,boxSizing:"border-box",outline:"none",background:"#FAFAF8"},
+  tag:c=>({background:c+"22",color:c,border:`1px solid ${c}44`,borderRadius:4,padding:"2px 7px",fontSize:11,fontWeight:700,display:"inline-block",fontFamily:"monospace"}),
+  row:{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"},
+  col:{display:"flex",flexDirection:"column",gap:12},
+  center:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,padding:"40px 16px",textAlign:"center",minHeight:"calc(100vh - 52px)"},
+};
+
+// ── CARD BADGE ────────────────────────────────────────────────
+function CardBadge({card,full=false}){
+  const c=PC[card.product];
+  if(!full)return <span style={{...G.tag(c),cursor:"default"}}>{card.id}</span>;
+  return(<div style={{background:"#fff",border:`2px solid ${c}`,borderRadius:8,padding:"8px 10px",minWidth:110}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+      <span style={{fontFamily:"monospace",fontWeight:700,color:c,fontSize:12}}>{card.id}</span>
+      <span style={{fontSize:9,background:c+"20",color:c,padding:"1px 5px",borderRadius:10,fontWeight:700}}>P{card.product}</span>
+    </div>
+    <div style={{display:"flex",gap:3}}>
+      {card.routing.map((wc,i)=>(<span key={i} style={{width:20,height:20,borderRadius:3,fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",background:card.ops[i]?.done?"#DCFCE7":(i===card.currentOpIdx?(wc==="B"?"#D4500A":"#1B3A4B"):"#F0EDE6"),color:card.ops[i]?.done?"#2D7D52":(i===card.currentOpIdx?"#fff":"#9CA3AF")}}>{wc}</span>))}
+    </div>
+    {card.flowDays!=null&&<div style={{fontSize:10,color:"#2D7D52",fontWeight:700,marginTop:3}}>✓ {card.flowDays}j</div>}
+  </div>);
+}
+
+function WCCol({wc,q=[],t}){
+  return(<div style={{background:wc==="B"?"#FFFBEB":"#F9FAFB",border:`2px solid ${wc==="B"?"#D4500A":"#E5E7EB"}`,borderRadius:8,padding:10,flex:1,minWidth:0}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+      <div style={{display:"flex",alignItems:"center",gap:4}}>
+        <span style={{fontWeight:700,fontSize:13,color:wc==="B"?"#D4500A":"#1B3A4B"}}>WC-{wc}</span>
+        {wc==="B"&&<span style={{fontSize:8,background:"#D4500A",color:"#fff",padding:"1px 4px",borderRadius:3,fontWeight:700}}>{t.goulot}</span>}
+      </div>
+      <span style={{...G.tag(wc==="B"?"#D4500A":"#64748B"),fontSize:10,padding:"1px 5px"}}>{q.length}</span>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:3,maxHeight:200,overflowY:"auto"}}>
+      {q.length===0?<span style={{fontSize:11,color:"#CBD5E1"}}>—</span>:q.map((card,i)=><div key={card.id} style={{opacity:i===0?1:0.6}}>{i===0?<CardBadge card={card} full/>:<CardBadge card={card}/>}</div>)}
+    </div>
+  </div>);
+}
+
+function TeamDash({team,t}){
+  const wip=WCS.reduce((n,wc)=>n+(team.queues[wc]?.length||0),0),buf=team.bufferB||0;
+  return(<div style={G.card}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:6}}>
+      <span style={{fontWeight:700,color:"#1B3A4B"}}>{team.name}</span>
+      <div style={G.row}>
+        <span style={{fontSize:12,color:"#64748B"}}>{t.wip}: <b>{wip}</b></span>
+        <span style={{fontSize:12,color:"#64748B"}}>{t.deck}: <b>{team.deck.length}</b></span>
+        <span style={{fontSize:12,color:"#2D7D52",fontWeight:600}}>{t.done}: {team.completed.length}</span>
+        <span style={{fontSize:12,color:buf>=BUFFER_LIMIT?"#D4500A":"#64748B",fontWeight:buf>=BUFFER_LIMIT?700:400}}>{t.buf}: {buf}/{BUFFER_LIMIT}</span>
+      </div>
+    </div>
+    <div style={{display:"flex",gap:8}}>{WCS.map(wc=><WCCol key={wc} wc={wc} q={team.queues[wc]} t={t}/>)}</div>
+  </div>);
+}
+
+function StatsBox({st,t,color,name}){
+  if(!st)return(<div style={{...G.card,textAlign:"center",color:"#CBD5E1",padding:24}}><div style={{fontSize:28,margin:"0 0 6px"}}>—</div><div style={{fontSize:12}}>{t.noData}</div></div>);
+  return(<div style={{...G.card,borderTop:`3px solid ${color}`}}>
+    <div style={{fontWeight:700,color,marginBottom:10,fontSize:13}}>{name}</div>
+    {[[t.count,st.count],[t.min,st.min],[t.max,st.max],[t.avg,st.avg],[t.stddev,st.stddev],[t.median,st.median]].map(([l,v])=>(
+      <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid #F8FAFC"}}>
+        <span style={{fontSize:12,color:"#64748B"}}>{l}</span><span style={{fontSize:13,fontWeight:700}}>{v}</span>
+      </div>
+    ))}
+  </div>);
+}
+
+function WelcomeScreen({t,onStart}){
+  const w=t.welcome;
+  return(<div style={{...G.bg,display:"flex",flexDirection:"column",minHeight:"100vh"}}>
+    <div style={{background:"#1B3A4B",padding:"12px 24px",display:"flex",justifyContent:"center",alignItems:"center"}}>
+      <span style={{color:"rgba(255,255,255,0.5)",fontSize:12,letterSpacing:1,textTransform:"uppercase"}}>{w.tag}</span>
+    </div>
+    <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 24px",gap:32}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:56,marginBottom:12,lineHeight:1}}>⚙</div>
+        <h1 style={{margin:"0 0 8px",color:"#1B3A4B",fontSize:36,fontWeight:800,letterSpacing:-1}}>The Job Shop Game</h1>
+        <p style={{margin:"0 0 4px",color:"#64748B",fontSize:15,fontStyle:"italic"}}>{w.subtitle}</p>
+      </div>
+      <div style={{display:"flex",gap:0,alignItems:"center",background:"#fff",borderRadius:12,padding:"12px 20px",border:"1px solid #D9D4C8"}}>
+        {["In","A","B","C","D","Out"].map((label,i,arr)=>(<div key={label} style={{display:"flex",alignItems:"center"}}>
+          <div style={{width:label==="In"||label==="Out"?36:40,height:40,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:label==="B"?"#D4500A":label==="In"||label==="Out"?"#F0EDE6":"#1B3A4B",color:label==="In"||label==="Out"?"#64748B":"#fff",fontSize:label==="In"||label==="Out"?11:15,fontWeight:700}}>{label}</div>
+          {i<arr.length-1&&<div style={{width:16,height:2,background:"#D9D4C8"}}/>}
+        </div>))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,maxWidth:360}}>
+        {[1,2,3,4].map(p=>(<div key={p} style={{background:"#fff",borderRadius:8,padding:"8px 12px",border:`2px solid ${PC[p]}22`,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{...G.tag(PC[p]),fontSize:12}}>P{p}</span>
+          <span style={{fontSize:12,color:"#64748B",fontFamily:"monospace"}}>{ROUTINGS[p].join("→")}</span>
+        </div>))}
+      </div>
+      <button style={{...G.btn("#2D7D52"),fontSize:16,padding:"14px 40px",borderRadius:8}} onClick={onStart}>{w.btn}</button>
+      <div style={{width:"100%",maxWidth:480,borderTop:"1px solid #D9D4C8",paddingTop:20,display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+        <div style={{textAlign:"center",padding:"12px 16px",background:"#fff",borderRadius:10,border:"1px solid #D9D4C8"}}>
+          <div style={{fontSize:10,color:"#94A3B8",marginBottom:8,letterSpacing:1,textTransform:"uppercase",fontWeight:600}}>{w.credit}</div>
+          <div style={{fontWeight:700,fontSize:14,color:"#1B3A4B",marginBottom:2}}>{w.author}</div>
+          <div style={{fontSize:12,color:"#64748B",marginBottom:1}}>{w.role}</div>
+          <div style={{fontSize:12,color:"#64748B",marginBottom:6}}>{w.univ}</div>
+          <a href={`mailto:${w.contact}`} style={{fontSize:11,color:"#2563EB",textDecoration:"none"}}>{w.contact}</a>
+        </div>
+        <div style={{textAlign:"center",padding:"12px 16px",background:"#fff",borderRadius:10,border:"1px solid #D9D4C8"}}>
+          <div style={{fontSize:10,color:"#94A3B8",marginBottom:8,letterSpacing:1,textTransform:"uppercase",fontWeight:600}}>{w.credit2}</div>
+          <div style={{fontWeight:700,fontSize:14,color:"#1B3A4B",marginBottom:2}}>{w.author2}</div>
+          <div style={{fontSize:12,color:"#64748B",marginBottom:6,lineHeight:1.4}}>{w.role2}</div>
+          <a href={`mailto:${w.contact2}`} style={{fontSize:11,color:"#2563EB",textDecoration:"none"}}>{w.contact2}</a>
+        </div>
+      </div>
+    </div>
+  </div>);
+}
+
+function ContextScreen({t,role,onReady}){
+  const [tab,setTab]=useState(0);
+  const c=t.ctx;
+  return(<div style={{...G.bg,minHeight:"100vh"}}>
+    <div style={{maxWidth:680,margin:"0 auto",padding:"24px 16px"}}>
+      <h2 style={{color:"#1B3A4B",marginBottom:4,fontSize:20}}>{c.title}</h2>
+      {role&&<div style={{marginBottom:16}}><span style={{...G.tag("#1B3A4B"),background:"#1B3A4B22",color:"#1B3A4B"}}>{t.roles[role]}</span></div>}
+      <div style={{display:"flex",borderBottom:"2px solid #D9D4C8",marginBottom:20,gap:0}}>
+        {c.tabs.map((tb,i)=>(<button key={i} onClick={()=>setTab(i)} style={{padding:"8px 16px",border:"none",cursor:"pointer",fontWeight:tab===i?700:400,borderBottom:`2px solid ${tab===i?"#1B3A4B":"transparent"}`,marginBottom:-2,background:"transparent",color:tab===i?"#1B3A4B":"#64748B",fontSize:13}}>{tb}</button>))}
+      </div>
+      {tab===0&&(<div style={G.col}>
+        {c.game.map((txt,i)=><p key={i} style={{margin:0,lineHeight:1.6,color:"#374151",fontSize:14}}>{txt}</p>)}
+        <div style={{...G.card,padding:12}}>
+          <div style={{fontWeight:600,fontSize:12,color:"#1B3A4B",marginBottom:8}}>Routages des produits</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+            {[1,2,3,4].map(p=>(<div key={p} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",background:"#F8FAFC",borderRadius:6}}>
+              <span style={{...G.tag(PC[p]),fontSize:11}}>P{p}</span>
+              <span style={{fontSize:12,fontFamily:"monospace",color:"#374151"}}>{ROUTINGS[p].join("→")}</span>
+              {p===4&&<span style={{fontSize:9,color:"#D4500A",fontWeight:700}}>2×B</span>}
+            </div>))}
+          </div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {c.scnTitles.map((title,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 12px",background:"#fff",borderRadius:8,border:`2px solid ${SC[i]}22`}}>
+            <span style={{...G.tag(SC[i]),fontSize:11,flexShrink:0}}>{title}</span>
+            <span style={{fontSize:13,color:"#374151"}}>{c.scnTexts[i]}</span>
+          </div>))}
+        </div>
+      </div>)}
+      {tab===1&&(<div style={G.col}>
+        {role?(<div style={{...G.card,borderTop:`3px solid ${role==="wc-b"?"#D4500A":"#1B3A4B"}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+            <span style={{fontWeight:700,fontSize:16,color:role==="wc-b"?"#D4500A":"#1B3A4B"}}>{t.roles[role]}</span>
+            {role==="wc-b"&&<span style={{fontSize:10,background:"#D4500A",color:"#fff",padding:"2px 6px",borderRadius:3,fontWeight:700}}>{t.goulot}</span>}
+          </div>
+          <p style={{margin:"0 0 12px",color:"#64748B",fontSize:13}}>{t.rdesc[role]}</p>
+          <ul style={{margin:0,padding:"0 0 0 16px",display:"flex",flexDirection:"column",gap:6}}>
+            {(c.roleDetails[role]||[]).map((tip,i)=>(<li key={i} style={{fontSize:13,color:"#374151",lineHeight:1.5}}>{tip}</li>))}
+          </ul>
+        </div>):(<p style={{color:"#64748B",fontSize:14}}>{t.rdesc["scheduler"]}</p>)}
+      </div>)}
+      {tab===2&&(<div style={G.col}>
+        <div style={G.card}>
+          <div style={{fontWeight:600,fontSize:13,color:"#1B3A4B",marginBottom:12}}>{c.howTitle}</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {c.steps.map((step,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+              <span style={{width:22,height:22,borderRadius:"50%",background:"#1B3A4B",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>{i+1}</span>
+              <span style={{fontSize:13,color:"#374151",lineHeight:1.6,paddingTop:2}}>{step}</span>
+            </div>))}
+          </div>
+        </div>
+      </div>)}
+      <div style={{marginTop:24,textAlign:"center"}}>
+        <button style={{...G.btn("#2D7D52"),fontSize:15,padding:"12px 32px",borderRadius:8}} onClick={onReady}>{t.readyBtn}</button>
+      </div>
+    </div>
+  </div>);
+}
+
+function DebriefScreen({results,t,onNew}){
+  const names=t.scnNames.slice(1);
+  const scnData=[1,2,3].map(i=>results[i]?.completed||null);
+  const statsArr=scnData.map(d=>d?computeStats(d):null);
+  const scatter=scnData.map((d,i)=>d?{name:names[i],color:SC[i],pts:d.map(c=>({x:c.releaseDay,y:c.flowDays})).filter(p=>p.x!=null&&p.y!=null)}:null).filter(Boolean);
+  const allFlows=scnData.filter(Boolean).flatMap(d=>d.map(c=>c.flowDays).filter(v=>v!=null));
+  const bins=[];
+  if(allFlows.length){const mx=Math.max(...allFlows);for(let i=0;i*5<=mx;i++){const lo=i*5+1,hi=(i+1)*5,b={range:`${lo}–${hi}`};scnData.forEach((d,j)=>{b[`s${j+1}`]=d?d.filter(c=>c.flowDays>=lo&&c.flowDays<=hi).length:0;});if(scnData.some((_,j)=>b[`s${j+1}`]>0))bins.push(b);}}
+  const doCSV=()=>{const rows=[["Scenario","Card","Product","Routing","Release day","Completed day","Flow Days"]];[1,2,3].forEach(s=>{if(results[s])results[s].completed.forEach(c=>{rows.push([t.scnNames[s],c.id,c.product,c.routing.join(">"),c.releaseDay,c.completedDay,c.flowDays]);});});const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(rows.map(r=>r.join(",")).join("\n"));a.download="job-shop-game.csv";a.click();};
+  return(<div style={{padding:16,maxWidth:1100,margin:"0 auto"}}>
+    <style>{`@media print{.np{display:none!important}body{background:#fff}}`}</style>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:8}}>
+      <div><h2 style={{margin:"0 0 2px",color:"#1B3A4B",fontSize:20,fontWeight:700}}>{t.comparison}</h2><p style={{margin:0,color:"#64748B",fontSize:12}}>{t.title}</p></div>
+      <div className="np" style={G.row}>
+        <button style={G.ghost} onClick={doCSV}>⬇ {t.csv}</button>
+        <button style={G.ghost} onClick={()=>window.print()}>🖨 {t.pdf}</button>
+        {onNew&&<button style={G.btn()} onClick={onNew}>+ {t.newSess}</button>}
+      </div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:14}}>
+      {[0,1,2].map(i=><StatsBox key={i} st={statsArr[i]} t={t} color={SC[i]} name={`S${i+1} — ${names[i]}`}/>)}
+    </div>
+    {scatter.length>0&&(<div style={{display:"grid",gridTemplateColumns:bins.length?"1fr 1fr":"1fr",gap:12,marginBottom:14}}>
+      <div style={G.card}>
+        <div style={{fontWeight:600,fontSize:12,marginBottom:8,color:"#1B3A4B"}}>{t.scatterT}</div>
+        <ResponsiveContainer width="100%" height={210}>
+          <ScatterChart margin={{top:5,right:10,bottom:24,left:0}}>
+            <CartesianGrid stroke="#F1F0EC"/>
+            <XAxis dataKey="x" type="number" tick={{fontSize:10}} label={{value:t.relDay,position:"insideBottom",offset:-12,fontSize:10}}/>
+            <YAxis dataKey="y" tick={{fontSize:10}} label={{value:t.flowDays,angle:-90,position:"insideLeft",fontSize:10}}/>
+            <Tooltip/>
+            {scatter.map(d=><Scatter key={d.name} name={d.name} data={d.pts} fill={d.color}/>)}
+          </ScatterChart>
+        </ResponsiveContainer>
+        <div style={{display:"flex",gap:12,justifyContent:"center",marginTop:4}}>
+          {scatter.map(d=><span key={d.name} style={{fontSize:11,display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:"50%",background:d.color,display:"inline-block"}}/>{d.name}</span>)}
+        </div>
+      </div>
+      {bins.length>0&&(<div style={G.card}>
+        <div style={{fontWeight:600,fontSize:12,marginBottom:8,color:"#1B3A4B"}}>{t.histoT}</div>
+        <ResponsiveContainer width="100%" height={210}>
+          <BarChart data={bins} margin={{top:5,right:10,bottom:5,left:0}}>
+            <CartesianGrid stroke="#F1F0EC"/>
+            <XAxis dataKey="range" tick={{fontSize:9}}/><YAxis tick={{fontSize:10}}/><Tooltip/><Legend iconSize={9} wrapperStyle={{fontSize:10}}/>
+            {scnData.map((d,i)=>d&&<Bar key={i} dataKey={`s${i+1}`} name={names[i]} fill={SC[i]}/>)}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>)}
+    </div>)}
+    <div style={G.card}>
+      <div style={{fontWeight:600,fontSize:12,marginBottom:10,color:"#1B3A4B"}}>{t.flowDays} — détail</div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{background:"#F8FAFC"}}>
+            <th style={{padding:"6px 8px",textAlign:"left",borderBottom:"2px solid #E2E8F0",color:"#64748B",fontWeight:600}}>Carte</th>
+            <th style={{padding:"6px 8px",textAlign:"left",borderBottom:"2px solid #E2E8F0",color:"#64748B",fontWeight:600}}>P</th>
+            <th style={{padding:"6px 8px",textAlign:"left",borderBottom:"2px solid #E2E8F0",color:"#64748B",fontWeight:600}}>Routage</th>
+            {names.map((n,i)=><th key={i} style={{padding:"6px 8px",textAlign:"right",borderBottom:`2px solid ${SC[i]}`,color:SC[i],fontWeight:700}}>S{i+1} {n}</th>)}
+          </tr></thead>
+          <tbody>
+            {Array.from({length:36},(_,i)=>{const p=Math.floor(i/9)+1,c=(i%9)+1,id=`P${p}-${c}`;const vals=[1,2,3].map(s=>results[s]?.completed?.find(x=>x.id===id)||null);if(vals.every(v=>!v))return null;
+              return(<tr key={id} style={{borderBottom:"1px solid #F1F5F9"}}>
+                <td style={{padding:"4px 8px",fontFamily:"monospace",fontWeight:700}}>{id}</td>
+                <td style={{padding:"4px 8px"}}><span style={G.tag(PC[p])}>{p}</span></td>
+                <td style={{padding:"4px 8px",fontFamily:"monospace",fontSize:10,color:"#94A3B8"}}>{ROUTINGS[p].join("→")}</td>
+                {vals.map((v,j)=><td key={j} style={{padding:"4px 8px",textAlign:"right",fontWeight:v?700:400,color:v?SC[j]:"#E2E8F0"}}>{v?v.flowDays:"—"}</td>)}
+              </tr>);
+            }).filter(Boolean)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>);
+}
+
+function FacilitatorView({session,onUpdate,t,onDebrief}){
+  const [actStatus,setActStatus]=useState({});
+  const [loading,setLoading]=useState(false);
+  const teams=Object.values(session.teams||{});
+  useEffect(()=>{
+    if(session.dayPhase!=="open")return;
+    const iv=setInterval(async()=>{const st={};for(const tm of teams)st[tm.id]=await loadAllActions(session.code,tm.id,session.day);setActStatus(st);},2500);
+    return()=>clearInterval(iv);
+  },[session.dayPhase,session.day]);
+  const openDay=async()=>{const ns={...session,dayPhase:"open",day:session.day+1};setActStatus({});await saveSession(session.code,ns);onUpdate(ns);};
+  const closeDay=async()=>{
+    setLoading(true);
+    const updTeams={...session.teams};
+    for(const tm of teams){const acts=await loadAllActions(session.code,tm.id,session.day);updTeams[tm.id]=applyDay(tm,session.day,session.scenario,acts);}
+    const allDone=Object.values(updTeams).every(tm=>tm.deck.length===0&&WCS.every(wc=>tm.queues[wc].length===0));
+    const ns={...session,teams:updTeams,dayPhase:allDone?"scnEnd":"idle"};
+    await saveSession(session.code,ns);onUpdate(ns);setLoading(false);
+  };
+  const goNext=async()=>{
+    const res={...session.results};
+    res[session.scenario]={completed:Object.values(session.teams).flatMap(tm=>tm.completed)};
+    const nxt=session.scenario+1;
+    if(nxt>3){const ns={...session,results:res,status:"finished"};await saveSession(session.code,ns);onDebrief(res);return;}
+    const newTeams={};Object.values(session.teams).forEach(tm=>{newTeams[tm.id]={...tm,deck:mkDeck(),queues:{A:[],B:[],C:[],D:[]},completed:[],bufferB:0};});
+    const ns={...session,scenario:nxt,day:0,dayPhase:"idle",teams:newTeams,results:res};
+    await saveSession(session.code,ns);onUpdate(ns);
+  };
+  const isDayOpen=session.dayPhase==="open",isScnEnd=session.dayPhase==="scnEnd";
+  return(<div style={{padding:16}}>
+    <div style={{...G.card,marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+      <div style={G.row}>
+        <span style={{...G.tag(SC[session.scenario-1]),fontSize:13,padding:"3px 9px"}}>S{session.scenario} — {t.scnNames[session.scenario]}</span>
+        <span style={{fontWeight:700,fontSize:18,color:"#1B3A4B"}}>{t.day} {session.day}</span>
+        {isDayOpen&&<span style={{...G.tag("#2D7D52"),fontSize:11}}>● ouvert</span>}
+        {isScnEnd&&<span style={{...G.tag("#D4500A"),fontSize:11}}>{t.scnDone}</span>}
+      </div>
+      <div style={G.row}>
+        {!isDayOpen&&!isScnEnd&&<button style={G.btn("#2D7D52")} onClick={openDay}>▶ {t.openDay}</button>}
+        {isDayOpen&&(()=>{
+          const humanRoles=teams.flatMap(tm=>getHumanRoles(tm));
+          const gotActs=teams.reduce((n,tm)=>n+Object.keys(actStatus[tm.id]||{}).filter(r=>r!=="monitor"&&!isAuto(tm,r)).length,0);
+          const allIn=gotActs>=humanRoles.length;
+          return<>
+            <span style={{fontSize:12,color:allIn?"#2D7D52":"#64748B"}}>{allIn?`✓ ${t.actsIn}`:`${humanRoles.length-gotActs} ${t.actsPend}`}</span>
+            <button style={G.btn("#D4500A")} onClick={closeDay} disabled={loading}>{loading?"…":`■ ${t.closeDay}`}</button>
+          </>;
+        })()}
+        {isScnEnd&&<button style={G.btn("#D4500A")} onClick={goNext}>{session.scenario<3?`→ ${t.nextScn}`:`📊 ${t.viewDeb}`}</button>}
+      </div>
+    </div>
+    <div style={G.col}>
+      {teams.map(tm=>(<div key={tm.id}>
+        <TeamDash team={tm} t={t}/>
+        {isDayOpen&&(<div style={{display:"flex",gap:6,flexWrap:"wrap",padding:"6px 0 2px"}}>
+          {ROLES.filter(r=>r!=="monitor").map(r=>{const auto=isAuto(tm,r),got=actStatus[tm.id]?.[r];return(
+            <span key={r} style={{fontSize:11,padding:"2px 8px",borderRadius:4,background:auto?"#FEF3C7":got?"#DCFCE7":"#F1F5F9",color:auto?"#D4500A":got?"#2D7D52":"#94A3B8",border:`1px solid ${auto?"#F59E0B44":got?"#2D7D5244":"#E2E8F0"}`,fontWeight:600}}>
+              {auto?`🤖 ${t.autoPilot}`:got?"✓ ":"○ "}{t.roles[r]}
+            </span>);
+          })}
+        </div>)}
+      </div>))}
+    </div>
+  </div>);
+}
+
+function PlayerView({session,team,role,t,onUpdate}){
+  const [submitted,setSubmitted]=useState(false);
+  const [myAct,setMyAct]=useState(null);
+  const [s2Pick,setS2Pick]=useState(null);
+  useEffect(()=>{setSubmitted(false);setMyAct(null);setS2Pick(null);},[session.day,session.dayPhase]);
+  useEffect(()=>{
+    const iv=setInterval(async()=>{const ns=await loadSession(session.code);if(ns&&(ns.day!==session.day||ns.dayPhase!==session.dayPhase))onUpdate(ns);},2500);
+    return()=>clearInterval(iv);
+  },[session.code,session.day,session.dayPhase]);
+  const submit=async action=>{setMyAct(action);setSubmitted(true);await saveAction(session.code,team.id,role,session.day,action);};
+  const isDayOpen=session.dayPhase==="open";
+  const wcKey=role.startsWith("wc-")?role.split("-")[1].toUpperCase():null;
+  const myQueue=wcKey?(team.queues[wcKey]||[]):[];
+  const topCard=myQueue[0],buf=team.bufferB||0;
+  if(role==="monitor")return(<div style={{padding:16}}><TeamDash team={team} t={t}/><div style={{...G.card,marginTop:12}}><div style={{fontWeight:600,marginBottom:10,color:"#2D7D52",fontSize:13}}>✓ {t.done}: {team.completed.length}</div><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{[...team.completed].reverse().slice(0,20).map(c=><CardBadge key={c.id} card={c} full/>)}</div></div></div>);
+  if(role==="scheduler")return(<div style={{padding:16}}>
+    <div style={{...G.card,marginBottom:12}}>
+      <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13}}><span>{t.deck}: <b>{team.deck.length}</b> {t.cardsLeft}</span><span style={{color:"#D4500A"}}>{t.buf}: <b>{buf}</b>/{BUFFER_LIMIT}</span><span style={{color:"#2D7D52"}}>{t.done}: <b>{team.completed.length}</b></span></div>
+      {session.scenario===3&&<div style={{marginTop:8,padding:"6px 12px",borderRadius:6,background:buf>=BUFFER_LIMIT?"#FEE2E2":"#DCFCE7",color:buf>=BUFFER_LIMIT?"#D4500A":"#2D7D52",fontWeight:600,fontSize:12}}>{buf>=BUFFER_LIMIT?`🔴 ${t.bufFull}`:`🟢 ${t.bufOk}`}</div>}
+    </div>
+    <div style={{...G.card,textAlign:"center",padding:24}}>
+      <div style={{fontSize:11,color:"#64748B",fontWeight:600,letterSpacing:1,textTransform:"uppercase",marginBottom:4}}>{t.roles.scheduler}</div>
+      <div style={{fontSize:22,fontWeight:700,color:"#1B3A4B",marginBottom:16}}>{t.day} {session.day}</div>
+      {!isDayOpen?<div style={{color:"#94A3B8",fontSize:13}}>{t.waitDay}</div>:submitted?<div style={{color:"#2D7D52",fontWeight:600,fontSize:15}}>{t.submitted} — {myAct?.startsWith("release")?t.release:t.hold}</div>:(
+        <div>
+          {session.scenario===2&&team.deck.length>0&&(<div style={{marginBottom:14}}><div style={{fontSize:12,color:"#64748B",marginBottom:8}}>{t.pickS2}</div><div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"center"}}>{team.deck.slice(0,6).map(c=>(<button key={c.id} onClick={()=>setS2Pick(c.id)} style={{border:`2px solid ${s2Pick===c.id?SC[1]:"#D9D4C8"}`,borderRadius:8,padding:4,cursor:"pointer",background:s2Pick===c.id?"#DCFCE7":"#fff"}}><CardBadge card={c} full/></button>))}</div></div>)}
+          <div style={{display:"flex",gap:8,justifyContent:"center",marginTop:8}}>
+            <button style={G.btn("#2D7D52")} disabled={team.deck.length===0} onClick={()=>submit(session.scenario===2&&s2Pick?`release:${s2Pick}`:"release")}>📤 {t.release}</button>
+            <button style={G.btn("#64748B")} onClick={()=>submit("hold")}>⏸ {t.hold}</button>
+          </div>
+          {team.deck.length===0&&<div style={{marginTop:8,color:"#94A3B8",fontSize:12}}>{t.deckEmpty}</div>}
+        </div>
+      )}
+    </div>
+    <div style={{...G.card,marginTop:12}}><div style={{display:"flex",gap:8}}>{WCS.map(wc=><WCCol key={wc} wc={wc} q={team.queues[wc]} t={t}/>)}</div></div>
+  </div>);
+  return(<div style={{padding:16}}>
+    <div style={{...G.card,marginBottom:12,display:"flex",gap:12,flexWrap:"wrap",fontSize:12,alignItems:"center"}}>
+      {WCS.map(wc=><div key={wc} style={{display:"flex",alignItems:"center",gap:4}}><span style={{fontWeight:700,color:wc==="B"?"#D4500A":"#64748B"}}>WC-{wc}</span><span style={G.tag(wc==="B"?"#D4500A":"#64748B")}>{team.queues[wc]?.length||0}</span></div>)}
+      <span style={{color:"#2D7D52",fontWeight:600}}>✓ {team.completed.length}</span>
+      {session.scenario===3&&<span style={{color:buf>=BUFFER_LIMIT?"#D4500A":"#2D7D52",fontWeight:600}}>B:{buf}/{BUFFER_LIMIT}</span>}
+    </div>
+    <div style={{...G.card,textAlign:"center",padding:24}}>
+      <div style={{fontSize:11,color:wcKey==="B"?"#D4500A":"#64748B",fontWeight:700,letterSpacing:1,textTransform:"uppercase",marginBottom:4,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+        {t.roles[role]}{wcKey==="B"&&<span style={{fontSize:9,background:"#D4500A",color:"#fff",padding:"1px 5px",borderRadius:3}}>{t.goulot}</span>}
+      </div>
+      <div style={{fontSize:22,fontWeight:700,color:"#1B3A4B",marginBottom:14}}>{t.day} {session.day}</div>
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:12,color:"#64748B",marginBottom:6}}>{t.yourQ}: {myQueue.length}</div>
+        {topCard?<div style={{display:"inline-block"}}><CardBadge card={topCard} full/></div>:<div style={{color:"#CBD5E1",fontSize:13,padding:12}}>{t.emptyQ}</div>}
+      </div>
+      {!isDayOpen?<div style={{color:"#94A3B8",fontSize:13}}>{t.waitDay}</div>:submitted?<div style={{color:"#2D7D52",fontWeight:600,fontSize:15}}>{t.submitted} — {myAct==="process"?t.proc:t.pass}</div>:(
+        <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+          <button style={G.btn(wcKey==="B"?"#D4500A":"#1B3A4B")} disabled={!topCard} onClick={()=>submit("process")}>⚙ {t.proc}</button>
+          <button style={G.btn("#64748B")} onClick={()=>submit("pass")}>⏭ {t.pass}</button>
+        </div>
+      )}
+    </div>
+    <div style={{...G.card,marginTop:12}}><div style={{display:"flex",gap:8}}>{WCS.map(wc=><WCCol key={wc} wc={wc} q={team.queues[wc]} t={t}/>)}</div></div>
+  </div>);
+}
+
+// ── MAIN APP ──────────────────────────────────────────────────
+function App(){
+  const [lang,setLang]=useState("fr");
+  const t=I18N[lang];
+  const [tab,setTab]=useState("create");
+  const [name,setName]=useState("");
+  const [codeInput,setCodeInput]=useState("");
+  const [err,setErr]=useState("");
+  const [sessionCode,setSessionCode]=useState("");
+  const [isFac,setIsFac]=useState(false);
+  const [myTeam,setMyTeam]=useState("team1");
+  const [myRole,setMyRole]=useState("");
+  const [session,setSession]=useState(null);
+  const [debrief,setDebrief]=useState(null);
+  const [view,setView]=useState("welcome");
+  const [loading,setLoading]=useState(false);
+  const [numTeams,setNumTeams]=useState(1);
+  const [showHelp,setShowHelp]=useState(false);
+
+  const doCreate=async()=>{
+    if(!name.trim()){setErr(t.enterName);return;}
+    setLoading(true);
+    const code=genCode();
+    const teams={};for(let i=1;i<=numTeams;i++)teams[`team${i}`]=mkTeam(`team${i}`,`${t.team} ${i}`);
+    const ns={code,facilitatorName:name.trim(),scenario:1,day:0,dayPhase:"idle",status:"lobby",teams,results:{1:null,2:null,3:null},lang};
+    await saveSession(code,ns);
+    setSession(ns);setSessionCode(code);setIsFac(true);setView("context");setLoading(false);
+  };
+  const doJoin=async()=>{
+    if(!name.trim()){setErr(t.enterName);return;}
+    if(codeInput.length!==6){setErr(t.invalidCode);return;}
+    setLoading(true);
+    const s=await loadSession(codeInput.toUpperCase());
+    if(!s){setErr(t.invalidCode);setLoading(false);return;}
+    setSession(s);setSessionCode(codeInput.toUpperCase());setView("chooseRole");setLoading(false);setErr("");
+  };
+  const doPickRole=async(tmId,role)=>{
+    if(session.teams[tmId]?.players[role]){setErr(t.roleTaken);return;}
+    const ns=JSON.parse(JSON.stringify(session));
+    ns.teams[tmId].players[role]=name.trim();
+    await saveSession(sessionCode,ns);
+    setSession(ns);setMyTeam(tmId);setMyRole(role);setView("context");
+  };
+  const doStart=async()=>{const ns={...session,status:"playing"};await saveSession(sessionCode,ns);setSession(ns);setView("game");};
+  const reset=()=>{setView("welcome");setSession(null);setSessionCode("");setIsFac(false);setMyRole("");setDebrief(null);setErr("");};
+
+  const Header=()=>(<div style={G.hdr}>
+    <div style={{display:"flex",alignItems:"center",gap:8}}>
+      <span style={{fontSize:16}}>⚙</span>
+      <span style={{fontWeight:700,fontSize:14}}>{t.title}</span>
+      {sessionCode&&<span style={{fontSize:11,opacity:0.5,fontFamily:"monospace",marginLeft:4}}>{sessionCode}</span>}
+    </div>
+    <div style={G.row}>
+      {session&&isFac&&<span style={{...G.tag("#F59E0B"),fontSize:11}}>{t.fac}</span>}
+      {session&&!isFac&&myRole&&<span style={{...G.tag("#93C5FD"),fontSize:11}}>{t.roles[myRole]}</span>}
+      {(view==="game"||view==="lobby")&&<button onClick={()=>setShowHelp(true)} style={{background:"rgba(255,255,255,0.15)",color:"#fff",border:"1px solid rgba(255,255,255,0.3)",borderRadius:"50%",width:26,height:26,cursor:"pointer",fontWeight:700,fontSize:13,padding:0}}>?</button>}
+      <button onClick={()=>setLang(lang==="fr"?"en":"fr")} style={{background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,0.25)",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:11}}>{lang==="fr"?"EN":"FR"}</button>
+      {view!=="welcome"&&view!=="landing"&&<button onClick={reset} style={{background:"transparent",color:"rgba(255,255,255,0.4)",border:"none",cursor:"pointer",fontSize:13}}>✕</button>}
+    </div>
+  </div>);
+
+  if(view==="welcome")return <WelcomeScreen t={t} onStart={()=>setView("landing")}/>;
+
+  if(view==="landing")return(<div style={G.bg}><Header/>
+    <div style={G.center}>
+      <div><div style={{fontSize:32,marginBottom:4}}>⚙</div><h1 style={{margin:"0 0 4px",color:"#1B3A4B",fontSize:24,fontWeight:800}}>{t.title}</h1><p style={{margin:0,color:"#64748B",fontSize:13}}>{t.sub}</p></div>
+      <div style={{...G.card,width:"100%",maxWidth:380}}>
+        <div style={{marginBottom:14}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.yourName}</label><input style={G.inp} value={name} onChange={e=>setName(e.target.value)} placeholder={t.yourName} autoFocus onKeyDown={e=>e.key==="Enter"&&(tab==="create"?doCreate():doJoin())}/></div>
+        <div style={{display:"flex",borderRadius:8,overflow:"hidden",border:"1.5px solid #D9D4C8",marginBottom:14}}>
+          {["create","join"].map((tb,i)=>(<button key={tb} onClick={()=>{setTab(tb);setErr("");}} style={{flex:1,padding:"8px",border:"none",cursor:"pointer",fontWeight:600,fontSize:13,background:tab===tb?"#1B3A4B":"#FAFAF8",color:tab===tb?"#fff":"#64748B"}}>{i===0?t.create:t.join}</button>))}
+        </div>
+        {tab==="create"&&(<div style={{marginBottom:14}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.numTeams}</label><div style={{display:"flex",gap:6}}>{[1,2,3].map(n=><button key={n} onClick={()=>setNumTeams(n)} style={{flex:1,padding:"8px",border:`2px solid ${numTeams===n?"#1B3A4B":"#D9D4C8"}`,borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:15,background:numTeams===n?"#1B3A4B":"#fff",color:numTeams===n?"#fff":"#64748B"}}>{n}</button>)}</div></div>)}
+        {tab==="join"&&(<div style={{marginBottom:14}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.code} <span style={{fontWeight:400,opacity:0.6}}>{t.codeHint}</span></label><input style={{...G.inp,fontFamily:"'Courier New',monospace",textAlign:"center",fontSize:22,letterSpacing:8}} value={codeInput} onChange={e=>setCodeInput(e.target.value.toUpperCase())} placeholder="· · · · · ·" maxLength={6} onKeyDown={e=>e.key==="Enter"&&doJoin()}/></div>)}
+        {err&&<div style={{color:"#D4500A",fontSize:12,marginBottom:8,textAlign:"center"}}>{err}</div>}
+        <button style={{...G.btn(tab==="create"?"#1B3A4B":"#D4500A"),width:"100%",padding:"11px",fontSize:14}} onClick={tab==="create"?doCreate:doJoin} disabled={loading}>{loading?"…":(tab==="create"?t.createBtn:t.joinBtn)}</button>
+      </div>
+    </div>
+  </div>);
+
+  if(view==="chooseRole"&&session)return(<div style={G.bg}><Header/>
+    <div style={{padding:"20px 16px",maxWidth:580,margin:"0 auto"}}>
+      <h3 style={{color:"#1B3A4B",marginBottom:16,fontSize:16}}>{t.chooseRole}</h3>
+      {Object.keys(session.teams).map(tk=>{const tm=session.teams[tk];return(<div key={tk} style={{...G.card,marginBottom:12}}>
+        <div style={{fontWeight:700,marginBottom:10}}>{tm.name}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {ROLES.map(role=>{const taken=!!tm.players[role],isB=role==="wc-b";return(
+            <button key={role} disabled={taken} style={{background:taken?"#F8FAFC":isB?"#FFFBEB":"#FAFAF8",border:`2px solid ${taken?"#F1F5F9":isB?"#D4500A":"#D9D4C8"}`,borderRadius:8,padding:"10px",cursor:taken?"default":"pointer",textAlign:"left",opacity:taken?0.5:1}} onClick={()=>!taken&&doPickRole(tk,role)}>
+              <div style={{fontWeight:700,fontSize:13,color:taken?"#CBD5E1":isB?"#D4500A":"#1B3A4B",display:"flex",alignItems:"center",gap:4}}>{taken?"✓ ":""}{t.roles[role]}{isB&&!taken&&<span style={{fontSize:9,background:"#D4500A",color:"#fff",padding:"1px 4px",borderRadius:3}}>{t.goulot}</span>}</div>
+              {taken?<div style={{fontSize:11,color:"#CBD5E1"}}>{tm.players[role]}</div>:<div style={{fontSize:11,color:"#94A3B8",marginTop:2}}>{t.rdesc[role]}</div>}
+            </button>);
+          })}
+        </div>
+      </div>);})}
+      {err&&<div style={{color:"#D4500A",fontSize:12}}>{err}</div>}
+    </div>
+  </div>);
+
+  if(view==="context")return(<div style={G.bg}><Header/><ContextScreen t={t} role={myRole} onReady={()=>{if(isFac)setView("lobby");else if(session?.status==="playing")setView("game");else setView("lobby");}}/></div>);
+
+  if(view==="lobby"&&session)return(<div style={G.bg}><Header/>
+    <div style={{padding:"20px 16px",maxWidth:540,margin:"0 auto"}}>
+      <div style={{...G.card,marginBottom:16,textAlign:"center"}}>
+        <div style={{fontSize:11,color:"#64748B",marginBottom:6,fontWeight:600,letterSpacing:1,textTransform:"uppercase"}}>{t.shareCode}</div>
+        <div style={{fontFamily:"'Courier New',monospace",fontSize:44,fontWeight:700,color:"#1B3A4B",letterSpacing:14,padding:"4px 0"}}>{sessionCode}</div>
+      </div>
+      {Object.values(session.teams).map(tm=>(<div key={tm.id} style={{...G.card,marginBottom:12}}>
+        <div style={{fontWeight:700,marginBottom:8}}>{tm.name}</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {ROLES.map(role=>{const pl=tm.players[role],auto=isAuto(tm,role);return(
+            <div key={role} style={{background:pl?"#DCFCE7":auto?"#FEF3C7":"#F8FAFC",border:`1px solid ${pl?"#2D7D5244":auto?"#F59E0B44":"#E2E8F0"}`,borderRadius:6,padding:"4px 10px",fontSize:12}}>
+              <span style={{color:"#64748B"}}>{t.roles[role]}: </span>
+              <span style={{fontWeight:600,color:pl?"#2D7D52":auto?"#D4500A":"#CBD5E1"}}>{pl||auto?"🤖":"—"}</span>
+            </div>);
+          })}
+        </div>
+        {ROLES.filter(r=>isAuto(tm,r)).length>0&&(<div style={{marginTop:8,padding:"4px 8px",background:"#FFFBEB",borderRadius:6,fontSize:11,color:"#D4500A"}}>🤖 {t.autoPilotNote} : {ROLES.filter(r=>isAuto(tm,r)).map(r=>t.roles[r]).join(", ")}</div>)}
+      </div>))}
+      {isFac&&<button style={{...G.btn("#2D7D52"),width:"100%",padding:"13px",fontSize:15}} onClick={doStart}>▶ {t.start}</button>}
+      {!isFac&&<div style={{textAlign:"center",color:"#64748B",fontSize:13,padding:12}}>{t.waitStart}</div>}
+    </div>
+  </div>);
+
+  if(view==="game"&&session){
+    const team=session.teams[myTeam];
+    return(<div style={G.bg}><Header/>
+      {showHelp&&(<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:1000,overflowY:"auto"}}><div style={{maxWidth:600,margin:"40px auto",padding:"0 16px 40px"}}><ContextScreen t={t} role={myRole} onReady={()=>setShowHelp(false)}/></div></div>)}
+      {isFac?<FacilitatorView session={session} onUpdate={setSession} t={t} onDebrief={r=>{setDebrief(r);setView("debrief");}}/>:team?<PlayerView session={session} team={team} role={myRole} t={t} onUpdate={setSession}/>:<div style={G.center}>{t.waitStart}</div>}
+    </div>);
+  }
+
+  if(view==="debrief"){
+    const res=debrief||session?.results||{};
+    return(<div style={G.bg}><Header/><DebriefScreen results={res} t={t} onNew={reset}/></div>);
+  }
+
+  return <div style={G.bg}><Header/><div style={G.center}>…</div></div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
