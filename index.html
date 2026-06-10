@@ -473,6 +473,16 @@ function SchedulerView({session,team,t,onUpdate}){
           ))
         }
       </div>
+      {/* S1 : bouton release FIFO */}
+      {isDayOpen&&isS1&&!submitted&&team.deck.length>0&&(
+        <button style={{...G.btn("#2D7D52"),width:"100%",marginBottom:8}} onClick={()=>submit('release')}>
+          📤 {t.releaseDeck} #{1} — {team.deck[0]?.id} (FIFO)
+        </button>
+      )}
+      {isDayOpen&&isS1&&!submitted&&team.deck.length===0&&(
+        <div style={{color:"#94A3B8",fontSize:13,padding:"8px 0"}}>{t.deckEmpty}</div>
+      )}
+      {/* S2/S3 : drag and drop + sélection libre */}
       {isDayOpen&&!isS1&&!submitted&&(
         <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={handleDrop}
           style={{border:`2px dashed ${dragOver?"#2D7D52":"#D9D4C8"}`,borderRadius:8,padding:16,textAlign:"center",background:dragOver?"#DCFCE7":"#FAFAF8",marginBottom:8}}>
