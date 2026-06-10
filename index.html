@@ -161,10 +161,10 @@ function isAuto(team,role){return AUTO_ORDER.includes(role)&&!team.players[role]
 function getHumanRoles(team){return ROLES.filter(r=>r!=="monitor"&&!isAuto(team,r));}
 
 // ── FIREBASE STORAGE ──────────────────────────────────────────
-async function saveSession(code,state){await db.ref(`sessions/jsg-${code}`).set(state);}
-async function loadSession(code){const snap=await db.ref(`sessions/jsg-${code}`).get();return snap.exists()?snap.val():null;}
-async function saveAction(code,team,role,day,action){await db.ref(`actions/jsg-${code}-${team}-${role}-${day}`).set({action,ts:Date.now()});}
-async function loadAllActions(code,teamId,day){const acts={};for(const role of ROLES){const snap=await db.ref(`actions/jsg-${code}-${teamId}-${role}-${day}`).get();if(snap.exists())acts[role]=snap.val().action;}return acts;}
+async function saveSession(code,state){await db.ref(`sessions/jsg-${code}`).set({json:JSON.stringify(state)});}
+async function loadSession(code){const snap=await db.ref(`sessions/jsg-${code}`).get();if(!snap.exists())return null;const v=snap.val();return JSON.parse(v.json);}
+async function saveAction(code,team,role,day,action){await db.ref(`actions/jsg-${code}-${team}-${role}-${day}`).set({json:JSON.stringify({action,ts:Date.now()})});}
+async function loadAllActions(code,teamId,day){const acts={};for(const role of ROLES){const snap=await db.ref(`actions/jsg-${code}-${teamId}-${role}-${day}`).get();if(snap.exists())acts[role]=JSON.parse(snap.val().json).action;}return acts;}
 
 // ── STYLE TOKENS ──────────────────────────────────────────────
 const G={
