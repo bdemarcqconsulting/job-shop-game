@@ -195,12 +195,7 @@ function applyDay(team,day,scenario,actions){
     const act=actions[role];
     const q=[...snapshot[wc]];
     if(q.length===0||act==='pass'){
-      // No processing — all cards stay
-      q.forEach(c=>newQueues[c.routing[c.currentOpIdx]=(()=>{
-        // Card stays at current wc
-        if(!newQueues[wc])newQueues[wc]=[];
-        newQueues[wc].push(c);
-      })());
+      q.forEach(c=>newQueues[wc].push(c));
       return;
     }
     let processIdx=0;
