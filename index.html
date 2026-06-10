@@ -8,15 +8,14 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>*{box-sizing:border-box;margin:0;padding:0;}body{background:#EDEAE0;}</style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect } = React;
-const { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } = Recharts;
+const { useState, useEffect, useRef } = React;
 
 // ── FIREBASE ──────────────────────────────────────────────────
 const firebaseConfig = {
@@ -343,14 +342,45 @@ function ContextScreen({t,role,onReady}){
   </div>);
 }
 
+function CJScatter({datasets,xLabel,yLabel}){
+  const ref=useRef(null);const chart=useRef(null);
+  useEffect(()=>{
+    if(!ref.current||!datasets.length)return;
+    if(chart.current){chart.current.destroy();chart.current=null;}
+    chart.current=new Chart(ref.current,{type:"scatter",
+      data:{datasets:datasets.map(d=>({label:d.name,data:d.pts,backgroundColor:d.color,pointRadius:5,pointHoverRadius:7}))},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:"bottom",labels:{boxWidth:10,font:{size:10}}}},
+        scales:{x:{title:{display:true,text:xLabel,font:{size:10}},ticks:{font:{size:9}}},y:{title:{display:true,text:yLabel,font:{size:10}},ticks:{font:{size:9}}}}}});
+    return()=>{if(chart.current){chart.current.destroy();chart.current=null;}};
+  },[JSON.stringify(datasets)]);
+  return <div style={{height:200,position:"relative"}}><canvas ref={ref}/></div>;
+}
+
+function CJBar({labels,datasets}){
+  const ref=useRef(null);const chart=useRef(null);
+  useEffect(()=>{
+    if(!ref.current||!labels.length)return;
+    if(chart.current){chart.current.destroy();chart.current=null;}
+    chart.current=new Chart(ref.current,{type:"bar",
+      data:{labels,datasets:datasets.map(d=>({label:d.name,data:d.data,backgroundColor:d.color}))},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:"bottom",labels:{boxWidth:10,font:{size:10}}}},
+        scales:{x:{ticks:{font:{size:9}}},y:{ticks:{font:{size:9}}}}}});
+    return()=>{if(chart.current){chart.current.destroy();chart.current=null;}};
+  },[JSON.stringify(labels),JSON.stringify(datasets)]);
+  return <div style={{height:200,position:"relative"}}><canvas ref={ref}/></div>;
+}
+
 function DebriefScreen({results,t,onNew}){
   const names=t.scnNames.slice(1);
   const scnData=[1,2,3].map(i=>results[i]?.completed||null);
   const statsArr=scnData.map(d=>d?computeStats(d):null);
   const scatter=scnData.map((d,i)=>d?{name:names[i],color:SC[i],pts:d.map(c=>({x:c.releaseDay,y:c.flowDays})).filter(p=>p.x!=null&&p.y!=null)}:null).filter(Boolean);
   const allFlows=scnData.filter(Boolean).flatMap(d=>d.map(c=>c.flowDays).filter(v=>v!=null));
-  const bins=[];
-  if(allFlows.length){const mx=Math.max(...allFlows);for(let i=0;i*5<=mx;i++){const lo=i*5+1,hi=(i+1)*5,b={range:`${lo}–${hi}`};scnData.forEach((d,j)=>{b[`s${j+1}`]=d?d.filter(c=>c.flowDays>=lo&&c.flowDays<=hi).length:0;});if(scnData.some((_,j)=>b[`s${j+1}`]>0))bins.push(b);}}
+  const bins=[],binLabels=[];
+  if(allFlows.length){const mx=Math.max(...allFlows);for(let i=0;i*5<=mx;i++){const lo=i*5+1,hi=(i+1)*5;const counts=scnData.map(d=>d?d.filter(c=>c.flowDays>=lo&&c.flowDays<=hi).length:0);if(counts.some(c=>c>0)){binLabels.push(`${lo}–${hi}`);bins.push(counts);}}}
+  const histDatasets=names.map((n,i)=>({name:n,color:SC[i],data:bins.map(b=>b[i])})).filter((_,i)=>scnData[i]);
   const doCSV=()=>{const rows=[["Scenario","Card","Product","Routing","Release day","Completed day","Flow Days"]];[1,2,3].forEach(s=>{if(results[s])results[s].completed.forEach(c=>{rows.push([t.scnNames[s],c.id,c.product,c.routing.join(">"),c.releaseDay,c.completedDay,c.flowDays]);});});const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(rows.map(r=>r.join(",")).join("\n"));a.download="job-shop-game.csv";a.click();};
   return(<div style={{padding:16,maxWidth:1100,margin:"0 auto"}}>
     <style>{`@media print{.np{display:none!important}body{background:#fff}}`}</style>
@@ -365,31 +395,14 @@ function DebriefScreen({results,t,onNew}){
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:14}}>
       {[0,1,2].map(i=><StatsBox key={i} st={statsArr[i]} t={t} color={SC[i]} name={`S${i+1} — ${names[i]}`}/>)}
     </div>
-    {scatter.length>0&&(<div style={{display:"grid",gridTemplateColumns:bins.length?"1fr 1fr":"1fr",gap:12,marginBottom:14}}>
+    {scatter.length>0&&(<div style={{display:"grid",gridTemplateColumns:binLabels.length?"1fr 1fr":"1fr",gap:12,marginBottom:14}}>
       <div style={G.card}>
         <div style={{fontWeight:600,fontSize:12,marginBottom:8,color:"#1B3A4B"}}>{t.scatterT}</div>
-        <ResponsiveContainer width="100%" height={210}>
-          <ScatterChart margin={{top:5,right:10,bottom:24,left:0}}>
-            <CartesianGrid stroke="#F1F0EC"/>
-            <XAxis dataKey="x" type="number" tick={{fontSize:10}} label={{value:t.relDay,position:"insideBottom",offset:-12,fontSize:10}}/>
-            <YAxis dataKey="y" tick={{fontSize:10}} label={{value:t.flowDays,angle:-90,position:"insideLeft",fontSize:10}}/>
-            <Tooltip/>
-            {scatter.map(d=><Scatter key={d.name} name={d.name} data={d.pts} fill={d.color}/>)}
-          </ScatterChart>
-        </ResponsiveContainer>
-        <div style={{display:"flex",gap:12,justifyContent:"center",marginTop:4}}>
-          {scatter.map(d=><span key={d.name} style={{fontSize:11,display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:"50%",background:d.color,display:"inline-block"}}/>{d.name}</span>)}
-        </div>
+        <CJScatter datasets={scatter} xLabel={t.relDay} yLabel={t.flowDays}/>
       </div>
-      {bins.length>0&&(<div style={G.card}>
+      {binLabels.length>0&&(<div style={G.card}>
         <div style={{fontWeight:600,fontSize:12,marginBottom:8,color:"#1B3A4B"}}>{t.histoT}</div>
-        <ResponsiveContainer width="100%" height={210}>
-          <BarChart data={bins} margin={{top:5,right:10,bottom:5,left:0}}>
-            <CartesianGrid stroke="#F1F0EC"/>
-            <XAxis dataKey="range" tick={{fontSize:9}}/><YAxis tick={{fontSize:10}}/><Tooltip/><Legend iconSize={9} wrapperStyle={{fontSize:10}}/>
-            {scnData.map((d,i)=>d&&<Bar key={i} dataKey={`s${i+1}`} name={names[i]} fill={SC[i]}/>)}
-          </BarChart>
-        </ResponsiveContainer>
+        <CJBar labels={binLabels} datasets={histDatasets}/>
       </div>)}
     </div>)}
     <div style={G.card}>
