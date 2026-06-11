@@ -14,1067 +14,377 @@
 </head>
 <body><div id="root"></div>
 <script type="text/babel">
-const {useState,useEffect,useRef} = React;
-
-// ── FIREBASE ──
+const {useState,useEffect,useRef}=React;
 const firebaseConfig={databaseURL:"https://job-shop-game-default-rtdb.europe-west1.firebasedatabase.app"};
 firebase.initializeApp(firebaseConfig);
 const db=firebase.database();
-
-// ── CONSTANTS ──
 const ROUTINGS={1:["A","B","C","D"],2:["B","C","D","A"],3:["C","D","A","B"],4:["A","B","B","C"]};
 const WCS=["A","B","C","D"];
 const ROLES=["scheduler","wc-a","wc-b","wc-c","wc-d","monitor"];
 const PC={1:"#3B82F6",2:"#10B981",3:"#8B5CF6",4:"#F59E0B"};
 const SC=["#2563EB","#2D7D52","#D4500A"];
 const AUTO_ORDER=["monitor","wc-d","wc-c","wc-a"];
-const CARD_COUNTS={20:5,32:8,40:10};
+const ADMIN_EMAIL="bdemarcq.consulting@outlook.com";
 
-// ── TRANSLATIONS ──
 const I18N={
-  fr:{
-    title:"Job Shop Game",sub:"Simulation de gestion de production",
-    create:"Créer",join:"Rejoindre",yourName:"Votre prénom",code:"Code de session",
-    createBtn:"Créer la session",joinBtn:"Rejoindre",
-    shareCode:"Partagez ce code avec les participants",
-    lobby:"Lobby",waitStart:"En attente du démarrage…",start:"Démarrer",
-    scenario:"Scénario",scnNames:["","Traditionnel","Optimisé","DBR"],
-    day:"Journée",startScn:"Démarrer",nextScn:"Scénario suivant",viewDeb:"Débriefing",
-    deck:"Paquet",done:"Terminées",wip:"En-cours",buf:"Buffer B",
-    release:"Libérer",hold:"Retenir",proc:"Traiter",pass:"Passer",
-    submitted:"Action enregistrée ✓",waitDay:"En attente de l'ouverture…",
-    yourQ:"Votre file d'attente",emptyQ:"File vide",
-    dropZone:"Glissez une carte ici pour la traiter",dropOver:"Déposer pour traiter ✓",
-    selectCard:"Cliquez une carte pour la sélectionner",
-    flowDays:"Flow Days",relDay:"Jour libération",
-    totalFlowDays:"Total Flow Days",
-    stats:"Statistiques",min:"Min",max:"Max",avg:"Moy",
-    stddev:"Éc-type",median:"Médiane",count:"Cartes terminées",
-    csv:"Exporter CSV",pdf:"Imprimer / PDF",noData:"Aucune donnée",
-    bufOk:"Buffer OK → libération autorisée",bufFull:"Buffer plein → vigilance",
-    goulot:"GOULOT",actsIn:"Toutes les actions reçues",actsPend:"action(s) en attente",
-    scnDone:"Scénario terminé !",comparison:"Comparaison des scénarios",
-    scatterT:"Flow Days vs Jour de libération",histoT:"Distribution des Flow Days",
-    fac:"Animateur",team:"Équipe",
-    enterName:"Entrez votre prénom",invalidCode:"Code invalide ou introuvable",
-    roleTaken:"Ce rôle est déjà pris",chooseRole:"Choisir un rôle",
-    newSess:"Nouvelle session",numTeams:"Équipes de jeu",
-    cardsLeft:"restantes",deckEmpty:"Paquet vide",
-    autoPilot:"Pilote auto",autoPilotNote:"Rôle non assigné — géré automatiquement",
-    readyBtn:"Prêt à jouer →",forceClose:"Forcer la clôture",
-    liveCharts:"📊 Graphiques live",closeModal:"Fermer",
-    releaseDeck:"Libérer",schedulerDeck:"File des commandes",
-    bufferWindow:"Fenêtre Buffer B",bufferSize:"Taille du buffer",
-    myWC:"Mon poste",totalShop:"Total shop",
-    numCards:"Nombre de cartes par scénario",
-    fifoLabel:"#",processed:"Traitée",
-    teamDashboard:"État de l'équipe",
-    completedCards:"Cartes terminées",
-    s1auto:"Release automatique (FIFO)",
-    roles:{scheduler:"Scheduleur","wc-a":"Opérateur A","wc-b":"Opérateur B","wc-c":"Opérateur C","wc-d":"Opérateur D",monitor:"Moniteur de flux"},
-    rdesc:{scheduler:"Décide quelles cartes entrent dans le système","wc-a":"Traite les opérations au poste A","wc-b":"Traite les opérations au poste B (goulot)","wc-c":"Traite les opérations au poste C","wc-d":"Traite les opérations au poste D",monitor:"Suit les flux et visualise les résultats"},
-    welcome:{tag:"Outil pédagogique interactif",credit:"Concept original",author:"James R. Holt, Ph.D., PE",role:"Professeur, Engineering Management",univ:"Washington State University",contact:"jholt@wsu.edu",credit2:"Adaptation numérique — plateforme web interactive",author2:"Benoit Demarcq",role2:"Expert Supply Chain · Conseil · Formation · Management de transition",contact2:"bdemarcq.consulting@outlook.com",btn:"Commencer le jeu",subtitle:"Solving the NP Complete Scheduling Problem"},
-    ctx:{title:"Bienvenue dans le Job Shop Game",tabs:["Le jeu","Mon rôle","Comment jouer"],
-      game:["Un atelier de production simplifié avec 4 postes (A, B, C, D) traite 4 types de produits. Chaque produit suit un routage différent.","Le poste B est le goulot d'étranglement. L'objectif est de comprendre comment les décisions de planification affectent les Flow Days."],
-      scnTitles:["S1 — Traditionnel","S2 — Optimisé","S3 — DBR"],
-      scnTexts:["Libération FIFO automatique — 1 carte/jour, ligne de base.","Le scheduleur choisit librement l'ordre de libération avec son équipe.","Drum-Buffer-Rope : le scheduler libère selon le buffer B."],
-      howTitle:"Déroulement d'une journée",
-      steps:["L'animateur démarre un scénario","Chaque opérateur glisse sa carte vers la zone de traitement","Le scheduleur libère (ou retient) une carte","La journée se clôture automatiquement","Les cartes avancent vers l'atelier suivant","On répète jusqu'à épuisement du paquet"],
-      roleDetails:{
-        scheduler:["Vous voyez toutes les commandes numérotées en FIFO","S1 : release automatique chaque jour (bouton Hold désactivé)","S2 : concertez-vous avec l'équipe pour choisir l'ordre","S3 : surveillez le buffer B et décidez de libérer ou retenir"],
-        "wc-a":["Vous voyez toutes les cartes en attente à votre poste","Glissez une carte vers la zone de traitement","S1 : la première carte est imposée (FIFO)","S2/S3 : choisissez librement quelle carte traiter"],
-        "wc-b":["Vous êtes au GOULOT — le poste le plus chargé","Glissez une carte vers la zone de traitement","En S3, votre charge contrôle les libérations","Observez comment DBR régule votre charge"],
-        "wc-c":["Vous voyez toutes les cartes en attente à votre poste","Glissez une carte vers la zone de traitement","S1 : la première carte est imposée (FIFO)","S2/S3 : choisissez librement"],
-        "wc-d":["Vous voyez toutes les cartes en attente à votre poste","Glissez une carte vers la zone de traitement","S1 : la première carte est imposée (FIFO)","S2/S3 : choisissez librement"],
-        monitor:["Observez les flux en temps réel","Suivez les cartes terminées et leurs flow days","Les graphiques se mettent à jour automatiquement","Animez le débriefing final"]
-      }
-    },
-  },
-  en:{
-    title:"Job Shop Game",sub:"Production Flow Simulation",
-    create:"Create",join:"Join",yourName:"Your first name",code:"Session code",
-    createBtn:"Create session",joinBtn:"Join",
-    shareCode:"Share this code with participants",
-    lobby:"Lobby",waitStart:"Waiting for game to start…",start:"Start",
-    scenario:"Scenario",scnNames:["","Traditional","Optimized","DBR"],
-    day:"Day",startScn:"Start",nextScn:"Next scenario",viewDeb:"Debrief",
-    deck:"Deck",done:"Completed",wip:"WIP",buf:"Buffer B",
-    release:"Release",hold:"Hold",proc:"Process",pass:"Skip",
-    submitted:"Action recorded ✓",waitDay:"Waiting for day to open…",
-    yourQ:"Your queue",emptyQ:"Empty queue",
-    dropZone:"Drag a card here to process it",dropOver:"Drop to process ✓",
-    selectCard:"Click a card to select it",
-    flowDays:"Flow Days",relDay:"Release day",
-    totalFlowDays:"Total Flow Days",
-    stats:"Statistics",min:"Min",max:"Max",avg:"Avg",
-    stddev:"Std Dev",median:"Median",count:"Completed cards",
-    csv:"Export CSV",pdf:"Print / PDF",noData:"No data",
-    bufOk:"Buffer OK → release allowed",bufFull:"Buffer full → caution",
-    goulot:"BOTTLENECK",actsIn:"All actions received",actsPend:"action(s) pending",
-    scnDone:"Scenario complete!",comparison:"Scenario comparison",
-    scatterT:"Flow Days vs Release day",histoT:"Flow Days distribution",
-    fac:"Facilitator",team:"Team",
-    enterName:"Enter your first name",invalidCode:"Invalid or not found",
-    roleTaken:"This role is already taken",chooseRole:"Choose a role",
-    newSess:"New session",numTeams:"Teams",
-    cardsLeft:"remaining",deckEmpty:"Deck empty",
-    autoPilot:"Auto-pilot",autoPilotNote:"Role unassigned — handled automatically",
-    readyBtn:"Ready to play →",forceClose:"Force close",
-    liveCharts:"📊 Live charts",closeModal:"Close",
-    releaseDeck:"Release",schedulerDeck:"Orders queue",
-    bufferWindow:"Buffer B window",bufferSize:"Buffer size",
-    myWC:"My station",totalShop:"Total shop",
-    numCards:"Cards per scenario",
-    fifoLabel:"#",processed:"Processed",
-    teamDashboard:"Team status",
-    completedCards:"Completed cards",
-    s1auto:"Automatic release (FIFO)",
-    roles:{scheduler:"Scheduler","wc-a":"Operator A","wc-b":"Operator B","wc-c":"Operator C","wc-d":"Operator D",monitor:"Flow Monitor"},
-    rdesc:{scheduler:"Decides which cards enter the system","wc-a":"Processes operations at station A","wc-b":"Processes operations at station B (bottleneck)","wc-c":"Processes operations at station C","wc-d":"Processes operations at station D",monitor:"Tracks flow and visualizes results"},
-    welcome:{tag:"Interactive educational tool",credit:"Original concept",author:"James R. Holt, Ph.D., PE",role:"Professor, Engineering Management",univ:"Washington State University",contact:"jholt@wsu.edu",credit2:"Digital adaptation — interactive web platform",author2:"Benoit Demarcq",role2:"Expert Supply Chain · Conseil · Formation · Management de transition",contact2:"bdemarcq.consulting@outlook.com",btn:"Start the game",subtitle:"Solving the NP Complete Scheduling Problem"},
-    ctx:{title:"Welcome to the Job Shop Game",tabs:["The game","My role","How to play"],
-      game:["A simplified production shop with 4 workstations processes 4 product types.","Station B is the bottleneck. Goal: understand how scheduling affects Flow Days."],
-      scnTitles:["S1 — Traditional","S2 — Optimized","S3 — DBR"],
-      scnTexts:["Automatic FIFO release — 1 card/day, baseline.","Scheduler freely chooses release order with team.","Drum-Buffer-Rope: release based on buffer B."],
-      howTitle:"How a day works",
-      steps:["Facilitator starts a scenario","Each operator drags their card to process","Scheduler releases (or holds) a card","Day closes automatically when all acted","Cards advance to next station","Repeat until deck and queues empty"],
-      roleDetails:{
-        scheduler:["See all orders numbered in FIFO order","S1: auto-release each day (Hold disabled)","S2: discuss with team to choose order","S3: watch buffer B and decide release"],
-        "wc-a":["See all cards waiting at your station","Drag a card to the processing zone","S1: first card imposed (FIFO)","S2/S3: freely choose"],
-        "wc-b":["You are at the BOTTLENECK","Drag a card to the processing zone","S3: your load controls releases","Watch how DBR regulates workload"],
-        "wc-c":["See all cards waiting at your station","Drag to process","S1: FIFO","S2/S3: free choice"],
-        "wc-d":["See all cards waiting at your station","Drag to process","S1: FIFO","S2/S3: free choice"],
-        monitor:["Observe flow in real time","Track completed cards","Charts update automatically","Lead the final debrief"]
-      }
-    },
-  }
+fr:{title:"Job Shop Game",sub:"Simulation de gestion de production",create:"Créer",join:"Rejoindre",yourName:"Votre prénom",code:"Code de session",createBtn:"Créer la session",joinBtn:"Rejoindre",shareCode:"Partagez ce code avec les participants",lobby:"Lobby",waitStart:"En attente du démarrage…",start:"Démarrer",scenario:"Scénario",scnNames:["","Traditionnel","Optimisé","DBR"],day:"Journée",startScn:"Démarrer",nextScn:"Scénario suivant",viewDeb:"Débriefing",deck:"Paquet",done:"Terminées",wip:"En-cours",buf:"Buffer B",release:"Libérer",hold:"Retenir",validateDay:"Valider la journée",proc:"Traiter",pass:"Passer",submitted:"Action enregistrée ✓",waitDay:"En attente de l'ouverture…",yourQ:"Votre file d'attente",emptyQ:"File vide",dropZone:"Glissez une carte ici pour la traiter",dropOver:"Déposer pour traiter ✓",flowDays:"Flow Days",relDay:"Jour libération",totalFlowDays:"Total Flow Days",stats:"Statistiques",min:"Min",max:"Max",avg:"Moy",stddev:"Éc-type",median:"Médiane",count:"Cartes terminées",csv:"Exporter CSV",pdf:"Imprimer / PDF",noData:"Aucune donnée",bufOk:"Buffer OK — libération autorisée",bufFull:"Buffer plein — vigilance",goulot:"GOULOT",actsIn:"Toutes les actions reçues",actsPend:"action(s) en attente",scnDone:"Scénario terminé !",comparison:"Comparaison des scénarios",scatterT:"Flow Days vs Jour de libération",histoT:"Distribution des Flow Days",fac:"Animateur",team:"Équipe",enterName:"Entrez votre prénom",invalidCode:"Code invalide ou introuvable",roleTaken:"Ce rôle est déjà pris",chooseRole:"Choisir un rôle",newSess:"Nouvelle session",numTeams:"Équipes de jeu",cardsLeft:"restantes",deckEmpty:"Paquet vide",autoPilot:"Pilote auto",autoPilotNote:"Rôle non assigné — géré automatiquement",readyBtn:"Prêt à jouer →",forceClose:"Forcer la clôture",liveCharts:"📊 Graphiques",closeModal:"Fermer",releaseDeck:"Libérer",schedulerDeck:"File des commandes",bufferWindow:"Buffer B",bufferSize:"Choisissez la taille du Buffer :",bufferLocked:"Taille fixée :",myWC:"Mon poste",totalShop:"Total shop",numCards:"Nombre de cartes",teamDashboard:"État de l'équipe",completedCards:"Cartes terminées",pendingRelease:"Carte à libérer aujourd'hui :",processed:"Traitée",
+roles:{scheduler:"Scheduleur","wc-a":"Opérateur A","wc-b":"Opérateur B","wc-c":"Opérateur C","wc-d":"Opérateur D",monitor:"Moniteur de flux"},
+rdesc:{scheduler:"Décide quelles cartes entrent","wc-a":"Traite les opérations au poste A","wc-b":"Traite les opérations au poste B (goulot)","wc-c":"Traite les opérations au poste C","wc-d":"Traite les opérations au poste D",monitor:"Suit les flux et visualise les résultats"},
+welcome:{tag:"Outil pédagogique interactif",credit:"Concept original",author:"James R. Holt, Ph.D., PE",role:"Professeur, Engineering Management",univ:"Washington State University",contact:"jholt@wsu.edu",credit2:"Adaptation numérique — plateforme web interactive",author2:"Benoit Demarcq",role2:"Expert Supply Chain · Conseil · Formation · Management de transition",contact2:"bdemarcq.consulting@outlook.com",btn:"Commencer le jeu",subtitle:"Solving the NP Complete Scheduling Problem"},
+ctx:{title:"Bienvenue dans le Job Shop Game",tabs:["Le jeu","Mon rôle","Comment jouer"],game:["Un atelier avec 4 postes (A,B,C,D) traite 4 types de produits. Chaque produit suit un routage différent.","Le poste B est le goulot. L'objectif est de comprendre comment la planification affecte les Flow Days."],scnTitles:["S1 — Traditionnel","S2 — Optimisé","S3 — DBR"],scnTexts:["Libération libre, le scheduleur choisit chaque jour.","Le scheduleur choisit l'ordre en concertation avec l'équipe.","Drum-Buffer-Rope : libération selon le buffer B."],howTitle:"Déroulement d'une journée",steps:["L'animateur démarre un scénario","Le scheduleur choisit une carte à libérer (ou retient)","Chaque opérateur choisit et glisse une carte vers la zone de traitement","La journée se clôture automatiquement quand tout le monde a agi","Les cartes avancent vers l'atelier suivant","On répète jusqu'à épuisement du paquet et des files"],
+roleDetails:{scheduler:["Vous voyez toutes les commandes numérotées (#1, #2…)","Dans tous les scénarios : choisissez librement quelle carte libérer ou retenez","S3 : définissez la taille du buffer avant de commencer","Les numéros restent fixes même après libération"],"wc-a":["Vous voyez toutes les cartes en attente","Choisissez librement quelle carte traiter","Glissez la carte vers la zone de traitement","La carte reste visible jusqu'à la clôture de la journée"],"wc-b":["Vous êtes au GOULOT — le poste le plus chargé","Choisissez librement quelle carte traiter","En S3, votre charge contrôle les libérations du scheduleur","Observez comment DBR régule votre charge"],"wc-c":["Vous voyez toutes les cartes en attente","Choisissez librement quelle carte traiter","Glissez la carte vers la zone de traitement","Comparez vos files entre les 3 scénarios"],"wc-d":["Vous voyez toutes les cartes en attente","Choisissez librement quelle carte traiter","Votre poste est en fin de chaîne","Comparez les temps de passage entre scénarios"],monitor:["Vous observez les flux en temps réel","Suivez les cartes terminées et leurs flow days","Les graphiques se mettent à jour automatiquement","Préparez-vous à animer le débriefing"]}},},
+en:{title:"Job Shop Game",sub:"Production Flow Simulation",create:"Create",join:"Join",yourName:"Your first name",code:"Session code",createBtn:"Create session",joinBtn:"Join",shareCode:"Share this code with participants",lobby:"Lobby",waitStart:"Waiting for game to start…",start:"Start",scenario:"Scenario",scnNames:["","Traditional","Optimized","DBR"],day:"Day",startScn:"Start",nextScn:"Next scenario",viewDeb:"Debrief",deck:"Deck",done:"Completed",wip:"WIP",buf:"Buffer B",release:"Release",hold:"Hold",validateDay:"Validate day",proc:"Process",pass:"Skip",submitted:"Action recorded ✓",waitDay:"Waiting for day to open…",yourQ:"Your queue",emptyQ:"Empty queue",dropZone:"Drag a card here to process it",dropOver:"Drop to process ✓",flowDays:"Flow Days",relDay:"Release day",totalFlowDays:"Total Flow Days",stats:"Statistics",min:"Min",max:"Max",avg:"Avg",stddev:"Std Dev",median:"Median",count:"Completed cards",csv:"Export CSV",pdf:"Print / PDF",noData:"No data",bufOk:"Buffer OK — release allowed",bufFull:"Buffer full — caution",goulot:"BOTTLENECK",actsIn:"All actions received",actsPend:"action(s) pending",scnDone:"Scenario complete!",comparison:"Scenario comparison",scatterT:"Flow Days vs Release day",histoT:"Flow Days distribution",fac:"Facilitator",team:"Team",enterName:"Enter your first name",invalidCode:"Invalid or not found",roleTaken:"This role is already taken",chooseRole:"Choose a role",newSess:"New session",numTeams:"Teams",cardsLeft:"remaining",deckEmpty:"Deck empty",autoPilot:"Auto-pilot",autoPilotNote:"Role unassigned — handled automatically",readyBtn:"Ready to play →",forceClose:"Force close",liveCharts:"📊 Charts",closeModal:"Close",releaseDeck:"Release",schedulerDeck:"Orders queue",bufferWindow:"Buffer B",bufferSize:"Choose buffer size:",bufferLocked:"Size locked:",myWC:"My station",totalShop:"Total shop",numCards:"Cards",teamDashboard:"Team status",completedCards:"Completed cards",pendingRelease:"Card to release today:",processed:"Processed",
+roles:{scheduler:"Scheduler","wc-a":"Operator A","wc-b":"Operator B","wc-c":"Operator C","wc-d":"Operator D",monitor:"Flow Monitor"},
+rdesc:{scheduler:"Decides which cards enter","wc-a":"Processes operations at station A","wc-b":"Processes operations at station B (bottleneck)","wc-c":"Processes operations at station C","wc-d":"Processes operations at station D",monitor:"Tracks flow and visualizes results"},
+welcome:{tag:"Interactive educational tool",credit:"Original concept",author:"James R. Holt, Ph.D., PE",role:"Professor, Engineering Management",univ:"Washington State University",contact:"jholt@wsu.edu",credit2:"Digital adaptation — interactive web platform",author2:"Benoit Demarcq",role2:"Expert Supply Chain · Conseil · Formation · Management de transition",contact2:"bdemarcq.consulting@outlook.com",btn:"Start the game",subtitle:"Solving the NP Complete Scheduling Problem"},
+ctx:{title:"Welcome to the Job Shop Game",tabs:["The game","My role","How to play"],game:["A simplified shop with 4 workstations processes 4 product types.","Station B is the bottleneck. Goal: understand how scheduling affects Flow Days."],scnTitles:["S1 — Traditional","S2 — Optimized","S3 — DBR"],scnTexts:["Free release — scheduler chooses each day.","Scheduler picks order in collaboration with team.","Drum-Buffer-Rope: release based on buffer B."],howTitle:"How a day works",steps:["Facilitator starts a scenario","Scheduler chooses a card to release (or holds)","Each operator chooses and drags a card to process","Day closes automatically when everyone has acted","Cards advance to next station","Repeat until deck and queues are empty"],
+roleDetails:{scheduler:["See all orders numbered (#1, #2…)","All scenarios: freely choose which card to release or hold","S3: set buffer size before starting","Numbers stay fixed even after release"],"wc-a":["See all cards waiting","Free choice in all scenarios","Drag to processing zone","Card stays visible until day closes"],"wc-b":["BOTTLENECK station","Free choice","S3: your workload controls releases","Watch how DBR regulates your workload"],"wc-c":["See all cards waiting","Free choice","Drag to process","Compare queues across scenarios"],"wc-d":["See all cards waiting","Free choice","End of chain station","Compare flow times"],monitor:["Observe flow in real time","Track completed cards","Charts update automatically","Lead the final debrief"]}},}
 };
 
-// ── GAME ENGINE ──
 function shuffle(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
+function mkDeck(copies){const cards=[1,2,3,4].flatMap(p=>Array.from({length:copies},(_,i)=>({id:`P${p}-${i+1}`,product:p,copy:i+1,routing:[...ROUTINGS[p]],ops:ROUTINGS[p].map(wc=>({wc,dayComplete:null,done:false})),currentOpIdx:-1,releaseDay:null,completedDay:null,flowDays:null})));return shuffle(cards).map((c,i)=>({...c,fifoNum:i+1}));}
+function mkTeam(id,name,copies){return{id,name,players:{},deck:mkDeck(copies),queues:{A:[],B:[],C:[],D:[]},completed:[],bufferB:0,bufferLimit:null};}
+function calcBufB(team){return WCS.reduce((sum,wc)=>sum+(team.queues[wc]||[]).reduce((n,card)=>{let b=0;for(let i=card.currentOpIdx;i<card.routing.length;i++)if(card.routing[i]==="B")b++;return n+b;},0),0);}
+function countBatWC(team,wc){return(team.queues[wc]||[]).reduce((n,card)=>{let b=0;for(let i=card.currentOpIdx;i<card.routing.length;i++)if(card.routing[i]==="B")b++;return n+b;},0);}
 
-function mkDeck(copies){
-  return shuffle([1,2,3,4].flatMap(p=>Array.from({length:copies},(_,i)=>({
-    id:`P${p}-${i+1}`,product:p,copy:i+1,routing:[...ROUTINGS[p]],
-    ops:ROUTINGS[p].map(wc=>({wc,dayComplete:null,done:false})),
-    currentOpIdx:-1,releaseDay:null,completedDay:null,flowDays:null,
-  }))));
-}
-
-function mkTeam(id,name,copies){
-  return{id,name,players:{},deck:mkDeck(copies),queues:{A:[],B:[],C:[],D:[]},completed:[],bufferB:0};
-}
-
-function calcBufB(team){
-  return WCS.reduce((sum,wc)=>sum+(team.queues[wc]||[]).reduce((n,card)=>{
-    let b=0;for(let i=card.currentOpIdx;i<card.routing.length;i++)if(card.routing[i]==="B")b++;return n+b;
-  },0),0);
-}
-
-function countBatWC(team,wc){
-  return(team.queues[wc]||[]).reduce((n,card)=>{
-    let b=0;for(let i=card.currentOpIdx;i<card.routing.length;i++)if(card.routing[i]==="B")b++;return n+b;
-  },0);
-}
-
-// CRITICAL FIX: snapshot queues before any processing to prevent same-day cascade
 function applyDay(team,day,scenario,actions){
   const t=JSON.parse(JSON.stringify(team));
-  // Snapshot: cards that were already in each queue at start of day
   const snapshot={A:[...t.queues.A],B:[...t.queues.B],C:[...t.queues.C],D:[...t.queues.D]};
-  const newQueues={A:[],B:[],C:[],D:[]};
-  const newCompleted=[...t.completed];
-
-  // Build set of card IDs present in snapshot (only these can be processed today)
-  const snapshotIds={};
-  WCS.forEach(wc=>snapshot[wc].forEach(c=>{snapshotIds[c.id]=wc;}));
-
-  // Process each WC from snapshot
+  const newQueues={A:[],B:[],C:[],D:[]};const newCompleted=[...t.completed];
   WCS.forEach(wc=>{
-    const role=`wc-${wc.toLowerCase()}`;
-    const act=actions[role];
-    const q=[...snapshot[wc]];
-    if(q.length===0||act==='pass'){
-      q.forEach(c=>newQueues[wc].push(c));
-      return;
-    }
+    const role=`wc-${wc.toLowerCase()}`;const act=actions[role];const q=[...snapshot[wc]];
+    if(q.length===0||act==='pass'){q.forEach(c=>newQueues[wc].push(c));return;}
     let processIdx=0;
-    if(act&&act!=='pass'&&act!=='process'){
-      const found=q.findIndex(c=>c.id===act);
-      if(found>=0)processIdx=found;
-    }
-    // Process the chosen card
+    if(act&&act!=='pass'&&act!=='process'){const found=q.findIndex(c=>c.id===act);if(found>=0)processIdx=found;}
     q.forEach((card,i)=>{
       if(i===processIdx){
-        const c=JSON.parse(JSON.stringify(card));
-        c.ops[c.currentOpIdx].dayComplete=day;
-        c.ops[c.currentOpIdx].done=true;
-        c.currentOpIdx++;
-        if(c.currentOpIdx>=c.routing.length){
-          c.completedDay=day;c.flowDays=day-c.releaseDay;newCompleted.push(c);
-        } else {
-          // Goes to next queue — but NOT processable today (snapshot isolation)
-          newQueues[c.routing[c.currentOpIdx]].push(c);
-        }
-      } else {
-        newQueues[wc].push(card);
-      }
+        const c=JSON.parse(JSON.stringify(card));c.ops[c.currentOpIdx].dayComplete=day;c.ops[c.currentOpIdx].done=true;c.currentOpIdx++;
+        if(c.currentOpIdx>=c.routing.length){c.completedDay=day;c.flowDays=day-c.releaseDay;newCompleted.push(c);}
+        else newQueues[c.routing[c.currentOpIdx]].push(c);
+      }else newQueues[wc].push(card);
     });
   });
-
-  // Apply new queues
-  t.queues=newQueues;
-  t.completed=newCompleted;
-
-  // Scheduler release
+  t.queues=newQueues;t.completed=newCompleted;
   const sa=actions['scheduler'];
-  const bufBefore=calcBufB(t);
   if(t.deck.length>0){
     let toRelease=null;
-    if(scenario===1){
-      // S1: always release (Hold disabled)
-      toRelease=t.deck.shift();
-    } else if(scenario===2){
-      if(sa&&sa.startsWith('release:')){
-        const idx=t.deck.findIndex(c=>c.id===sa.slice(8));
-        if(idx>=0)[toRelease]=t.deck.splice(idx,1);
-      } else if(sa==='release'){
-        toRelease=t.deck.shift();
-      }
-      // sa==='hold' → no release
-    } else if(scenario===3){
-      const bufLimit=t.bufferLimit||5;
-      if(sa&&sa.startsWith('release:')){
-        const idx=t.deck.findIndex(c=>c.id===sa.slice(8));
-        if(idx>=0)[toRelease]=t.deck.splice(idx,1);
-      } else if(sa==='release'){
-        toRelease=t.deck.shift();
-      }
-      // sa==='hold' → no release regardless of buffer
-    }
-    if(toRelease){
-      toRelease.releaseDay=day;toRelease.currentOpIdx=0;
-      t.queues[toRelease.routing[0]].push(toRelease);
-    }
+    if(sa&&sa.startsWith('release:')){const idx=t.deck.findIndex(c=>c.id===sa.slice(8));if(idx>=0)[toRelease]=t.deck.splice(idx,1);else toRelease=t.deck.shift();}
+    else if(sa==='release')toRelease=t.deck.shift();
+    if(toRelease){toRelease.releaseDay=day;toRelease.currentOpIdx=0;t.queues[toRelease.routing[0]].push(toRelease);}
   }
-  t.bufferB=calcBufB(t);
-  return t;
+  t.bufferB=calcBufB(t);return t;
 }
 
-function computeStats(cards){
-  const f=cards.map(c=>c.flowDays).filter(v=>v!=null).sort((a,b)=>a-b);
-  if(!f.length)return null;
-  const avg=f.reduce((a,b)=>a+b,0)/f.length;
-  const med=f.length%2===0?(f[f.length/2-1]+f[f.length/2])/2:f[Math.floor(f.length/2)];
-  return{min:f[0],max:f[f.length-1],avg:+(avg.toFixed(1)),stddev:+(Math.sqrt(f.reduce((a,v)=>a+Math.pow(v-avg,2),0)/f.length).toFixed(1)),median:med,count:f.length};
-}
-
+function computeStats(cards){const f=cards.map(c=>c.flowDays).filter(v=>v!=null).sort((a,b)=>a-b);if(!f.length)return null;const avg=f.reduce((a,b)=>a+b,0)/f.length;const med=f.length%2===0?(f[f.length/2-1]+f[f.length/2])/2:f[Math.floor(f.length/2)];return{min:f[0],max:f[f.length-1],avg:+(avg.toFixed(1)),stddev:+(Math.sqrt(f.reduce((a,v)=>a+Math.pow(v-avg,2),0)/f.length).toFixed(1)),median:med,count:f.length};}
 function genCode(){const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";return Array.from({length:6},()=>c[0|Math.random()*c.length]).join("");}
 function isAuto(team,role){return AUTO_ORDER.includes(role)&&!team.players[role];}
 function getHumanRoles(team){return ROLES.filter(r=>r!=="monitor"&&!isAuto(team,r));}
 
-// ── STORAGE ──
 async function saveSession(code,state){await db.ref(`sessions/jsg-${code}`).set({json:JSON.stringify(state)});}
 async function loadSession(code){const snap=await db.ref(`sessions/jsg-${code}`).get();if(!snap.exists())return null;return JSON.parse(snap.val().json);}
 async function saveAction(code,team,role,day,action){await db.ref(`actions/jsg-${code}-${team}-${role}-${day}`).set({json:JSON.stringify({action,ts:Date.now()})});}
 async function loadAllActions(code,teamId,day){const acts={};for(const role of ROLES){const snap=await db.ref(`actions/jsg-${code}-${teamId}-${role}-${day}`).get();if(snap.exists())acts[role]=JSON.parse(snap.val().json).action;}return acts;}
+async function isEmailAuthorized(email){try{const snap=await db.ref('admin/whitelist').get();if(!snap.exists())return false;const val=snap.val();const norm=email.toLowerCase().trim();return Object.values(val).some(v=>typeof v==="string"&&v.toLowerCase().trim()===norm);}catch(e){return false;}}
+async function getSavedEmail(){try{const s=await db.ref('admin/last_fac_email').get();return s.exists()?s.val():'';}catch(e){return '';}}
+async function saveEmailDB(email){try{await db.ref('admin/last_fac_email').set(email);}catch(e){}}
 
-// ── ADMIN / WHITELIST ──
-const ADMIN_EMAIL="bdemarcq.consulting@outlook.com";
+const G={bg:{background:"#EDEAE0",minHeight:"100vh",fontFamily:"system-ui,-apple-system,sans-serif",color:"#1A1A1A"},hdr:{background:"#1B3A4B",color:"#fff",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8},card:{background:"#fff",borderRadius:10,padding:16,border:"1px solid #D9D4C8"},btn:(c="#1B3A4B")=>({background:c,color:"#fff",border:"none",borderRadius:6,padding:"9px 18px",cursor:"pointer",fontWeight:600,fontSize:13}),ghost:{background:"transparent",color:"#1B3A4B",border:"1.5px solid #1B3A4B",borderRadius:6,padding:"8px 16px",cursor:"pointer",fontWeight:600,fontSize:13},inp:{width:"100%",padding:"10px 12px",border:"1.5px solid #D9D4C8",borderRadius:6,fontSize:14,boxSizing:"border-box",outline:"none",background:"#FAFAF8"},tag:c=>({background:c+"22",color:c,border:`1px solid ${c}44`,borderRadius:4,padding:"2px 7px",fontSize:11,fontWeight:700,display:"inline-block",fontFamily:"monospace"}),row:{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"},col:{display:"flex",flexDirection:"column",gap:12},center:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,padding:"40px 16px",textAlign:"center",minHeight:"calc(100vh - 52px)"}};
 
-async function isEmailAuthorized(email){
-  try{
-    const snap=await db.ref('admin/whitelist').get();
-    if(!snap.exists())return false;
-    const val=snap.val();
-    const norm=email.toLowerCase().trim();
-    return Object.values(val).some(v=>typeof v==="string"&&v.toLowerCase().trim()===norm);
-  }catch(e){return false;}
-}
-
-function getSavedEmail(){try{return localStorage.getItem('jsg_fac_email')||'';}catch(e){return '';}}
-function saveEmail(email){try{localStorage.setItem('jsg_fac_email',email);}catch(e){}}
-
-// ── STYLES ──
-const G={
-  bg:{background:"#EDEAE0",minHeight:"100vh",fontFamily:"system-ui,-apple-system,sans-serif",color:"#1A1A1A"},
-  hdr:{background:"#1B3A4B",color:"#fff",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8},
-  card:{background:"#fff",borderRadius:10,padding:16,border:"1px solid #D9D4C8"},
-  btn:(c="#1B3A4B")=>({background:c,color:"#fff",border:"none",borderRadius:6,padding:"9px 18px",cursor:"pointer",fontWeight:600,fontSize:13}),
-  ghost:{background:"transparent",color:"#1B3A4B",border:"1.5px solid #1B3A4B",borderRadius:6,padding:"8px 16px",cursor:"pointer",fontWeight:600,fontSize:13},
-  inp:{width:"100%",padding:"10px 12px",border:"1.5px solid #D9D4C8",borderRadius:6,fontSize:14,boxSizing:"border-box",outline:"none",background:"#FAFAF8"},
-  tag:c=>({background:c+"22",color:c,border:`1px solid ${c}44`,borderRadius:4,padding:"2px 7px",fontSize:11,fontWeight:700,display:"inline-block",fontFamily:"monospace"}),
-  row:{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"},
-  col:{display:"flex",flexDirection:"column",gap:12},
-  center:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,padding:"40px 16px",textAlign:"center",minHeight:"calc(100vh - 52px)"},
-};
-
-// ── ORDER CARD ──
-function OrderCard({card,selected=false,selectable=false,onSelect,compact=false,fifoNum=null}){
+function OrderCard({card,selected=false,selectable=false,onSelect,compact=false}){
   const color=PC[card.product];
-  if(compact) return(
-    <div style={{background:"#fff",border:`2px solid ${selected?color:"#D9D4C8"}`,borderRadius:6,padding:"4px 8px",cursor:selectable?"pointer":"default",display:"flex",alignItems:"center",gap:5,flexShrink:0}} onClick={selectable?onSelect:undefined}>
-      {fifoNum!=null&&<span style={{fontSize:9,fontWeight:700,color:"#94A3B8",minWidth:14}}>#{fifoNum}</span>}
-      <span style={{...G.tag(color),fontSize:10}}>P{card.product}-{card.copy}</span>
-      <span style={{fontSize:10,fontFamily:"monospace",color:"#64748B"}}>{card.routing.join("→")}</span>
-      {card.releaseDay!=null&&<span style={{fontSize:10,color:"#1B3A4B",fontWeight:600}}>J{card.releaseDay}</span>}
-      {card.flowDays!=null&&<span style={{fontSize:10,color:"#2D7D52",fontWeight:700}}>✓{card.flowDays}j</span>}
+  if(compact)return(<div style={{background:"#fff",border:`2px solid ${selected?color:"#D9D4C8"}`,borderRadius:6,padding:"4px 8px",cursor:selectable?"pointer":"default",display:"flex",alignItems:"center",gap:5,flexShrink:0}} onClick={selectable?onSelect:undefined}>{card.fifoNum!=null&&<span style={{fontSize:9,fontWeight:700,color:"#94A3B8",minWidth:16}}>#{card.fifoNum}</span>}<span style={{...G.tag(color),fontSize:10}}>P{card.product}-{card.copy}</span><span style={{fontSize:10,fontFamily:"monospace",color:"#64748B"}}>{card.routing.join("→")}</span>{card.releaseDay!=null&&<span style={{fontSize:10,color:"#1B3A4B",fontWeight:600}}>J{card.releaseDay}</span>}{card.flowDays!=null&&<span style={{fontSize:10,color:"#2D7D52",fontWeight:700}}>✓{card.flowDays}j</span>}</div>);
+  return(<div style={{background:"#fff",border:`2px solid ${selected?color:"#D9D4C8"}`,borderRadius:6,padding:"8px 10px",width:150,fontSize:11,cursor:selectable?"pointer":"default",boxShadow:selected?`0 0 0 3px ${color}33`:"none",flexShrink:0,position:"relative"}} onClick={selectable?onSelect:undefined}>
+    {card.fifoNum!=null&&<div style={{position:"absolute",top:5,left:7,fontSize:10,fontWeight:700,color:"#94A3B8"}}>#{card.fifoNum}</div>}
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,borderBottom:"1px solid #E2E8F0",paddingBottom:3,paddingTop:card.fifoNum!=null?12:0}}>
+      <span style={{fontWeight:700,fontSize:10,color:"#1B3A4B"}}>Order Card</span>
+      <span style={{...G.tag(color),fontSize:9,padding:"1px 5px"}}>P{card.product}</span>
     </div>
-  );
-  return(
-    <div style={{background:"#fff",border:`2px solid ${selected?color:"#D9D4C8"}`,borderRadius:6,padding:"8px 10px",width:150,fontSize:11,cursor:selectable?"pointer":"default",boxShadow:selected?`0 0 0 3px ${color}33`:"none",flexShrink:0,position:"relative"}} onClick={selectable?onSelect:undefined}>
-      {fifoNum!=null&&<div style={{position:"absolute",top:6,left:8,fontSize:10,fontWeight:700,color:"#94A3B8"}}>#{fifoNum}</div>}
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,borderBottom:"1px solid #E2E8F0",paddingBottom:3,paddingTop:fifoNum!=null?12:0}}>
-        <span style={{fontWeight:700,fontSize:10,color:"#1B3A4B"}}>Order Card</span>
-        <span style={{...G.tag(color),fontSize:9,padding:"1px 5px"}}>P{card.product}</span>
-      </div>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:10}}>
-        <span style={{color:"#64748B"}}>Release Day</span>
-        <span style={{fontFamily:"monospace",fontWeight:700,color:"#1B3A4B"}}>{card.releaseDay??<span style={{color:"#E2E8F0"}}>___</span>}</span>
-      </div>
-      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
-        <thead><tr>
-          <td style={{fontSize:9,color:"#94A3B8",paddingBottom:1,fontWeight:600}}>Op.</td>
-          <td style={{fontSize:9,color:"#94A3B8",textAlign:"right",paddingBottom:1,fontWeight:600}}>Jour ✓</td>
-        </tr></thead>
-        <tbody>
-          {card.routing.map((wc,i)=>(
-            <tr key={i} style={{background:i===card.currentOpIdx?"#FEF3C7":card.ops[i].done?"#F0FDF4":"transparent"}}>
-              <td style={{fontWeight:700,fontSize:13,color:wc==="B"?"#D4500A":"#1B3A4B",padding:"2px 0",lineHeight:1}}>{wc}</td>
-              <td style={{textAlign:"right",fontFamily:"monospace",fontSize:11,fontWeight:card.ops[i].done?700:400,color:card.ops[i].done?"#2D7D52":"#E2E8F0",padding:"2px 0"}}>
-                {card.ops[i].done?card.ops[i].dayComplete:<span style={{color:"#E2E8F0"}}>___</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #E2E8F0",paddingTop:3,fontSize:10}}>
-        <span style={{color:"#64748B"}}>Total Flow Days</span>
-        <span style={{fontFamily:"monospace",fontWeight:700,color:card.flowDays?"#2D7D52":"#E2E8F0"}}>{card.flowDays??<span style={{color:"#E2E8F0"}}>___</span>}</span>
-      </div>
-    </div>
-  );
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,fontSize:10}}><span style={{color:"#64748B"}}>Release Day</span><span style={{fontFamily:"monospace",fontWeight:700,color:"#1B3A4B"}}>{card.releaseDay!=null?card.releaseDay:<span style={{color:"#E2E8F0"}}>___</span>}</span></div>
+    <table style={{width:"100%",borderCollapse:"collapse",marginBottom:3}}><thead><tr><td style={{fontSize:9,color:"#94A3B8",paddingBottom:1,fontWeight:600}}>Op.</td><td style={{fontSize:9,color:"#94A3B8",textAlign:"right",paddingBottom:1,fontWeight:600}}>Jour ✓</td></tr></thead>
+      <tbody>{card.routing.map((wc,i)=>(<tr key={i} style={{background:i===card.currentOpIdx?"#FEF3C7":card.ops[i].done?"#F0FDF4":"transparent"}}><td style={{fontWeight:700,fontSize:13,color:wc==="B"?"#D4500A":"#1B3A4B",padding:"2px 0",lineHeight:1}}>{wc}</td><td style={{textAlign:"right",fontFamily:"monospace",fontSize:11,fontWeight:card.ops[i].done?700:400,color:card.ops[i].done?"#2D7D52":"#E2E8F0",padding:"2px 0"}}>{card.ops[i].done?card.ops[i].dayComplete:<span style={{color:"#E2E8F0"}}>___</span>}</td></tr>))}</tbody>
+    </table>
+    <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #E2E8F0",paddingTop:3,fontSize:10}}><span style={{color:"#64748B"}}>Total Flow Days</span><span style={{fontFamily:"monospace",fontWeight:700,color:card.flowDays?"#2D7D52":"#E2E8F0"}}>{card.flowDays!=null?card.flowDays:<span style={{color:"#E2E8F0"}}>___</span>}</span></div>
+  </div>);
 }
 
-// ── BUFFER B WINDOW ──
 function BufferWindow({team,t,bufferLimit}){
-  const total=calcBufB(team);
-  const pct=Math.min(total/bufferLimit,1);
-  const color=pct>=1?"#D4500A":pct>=0.7?"#F59E0B":"#2D7D52";
-  return(
-    <div style={{...G.card,marginBottom:8,background:"#FFFBEB",border:`2px solid ${color}`}}>
-      <div style={{fontWeight:700,fontSize:13,color:"#1B3A4B",marginBottom:8}}>{t.bufferWindow}</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-        {WCS.map(wc=>{
-          const n=countBatWC(team,wc);
-          return(
-            <div key={wc} style={{display:"flex",justifyContent:"space-between",padding:"4px 8px",background:"#fff",borderRadius:6,border:"1px solid #E2E8F0"}}>
-              <span style={{fontSize:12,fontWeight:wc==="B"?700:400,color:wc==="B"?"#D4500A":"#64748B"}}>WC-{wc}{wc==="B"&&" ⭐"}</span>
-              <span style={{fontFamily:"monospace",fontWeight:700,fontSize:13,color:n>0?"#D4500A":"#94A3B8"}}>{n}</span>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-        <span style={{fontSize:13,fontWeight:700,color:"#1B3A4B"}}>{t.totalShop} : <span style={{color}}>{total}</span> / {bufferLimit}</span>
-      </div>
-      <div style={{height:10,background:"#E2E8F0",borderRadius:5,overflow:"hidden"}}>
-        <div style={{height:"100%",width:`${pct*100}%`,background:color,borderRadius:5,transition:"width 0.3s"}}/>
-      </div>
-      <div style={{marginTop:6,fontSize:12,color,fontWeight:600}}>
-        {total<bufferLimit?`🟢 ${t.bufOk}`:`🔴 ${t.bufFull}`}
-      </div>
-    </div>
-  );
+  const total=calcBufB(team);const limit=bufferLimit||5;const pct=Math.min(total/limit,1);const color=pct>=1?"#D4500A":pct>=0.7?"#F59E0B":"#2D7D52";
+  return(<div style={{...G.card,marginBottom:8,background:"#FFFBEB",border:`2px solid ${color}`}}>
+    <div style={{fontWeight:700,fontSize:13,color:"#1B3A4B",marginBottom:8}}>{t.bufferWindow}</div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>{WCS.map(wc=>{const n=countBatWC(team,wc);return(<div key={wc} style={{display:"flex",justifyContent:"space-between",padding:"4px 8px",background:"#fff",borderRadius:6,border:"1px solid #E2E8F0"}}><span style={{fontSize:12,fontWeight:wc==="B"?700:400,color:wc==="B"?"#D4500A":"#64748B"}}>WC-{wc}{wc==="B"&&" ⭐"}</span><span style={{fontFamily:"monospace",fontWeight:700,fontSize:13,color:n>0?"#D4500A":"#94A3B8"}}>{n}</span></div>);})}</div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}><span style={{fontSize:13,fontWeight:700,color:"#1B3A4B"}}>{t.totalShop} : <span style={{color}}>{total}</span> / {limit}</span></div>
+    <div style={{height:10,background:"#E2E8F0",borderRadius:5,overflow:"hidden"}}><div style={{height:"100%",width:`${pct*100}%`,background:color,borderRadius:5,transition:"width 0.3s"}}/></div>
+    <div style={{marginTop:5,fontSize:12,color,fontWeight:600}}>{total<limit?`🟢 ${t.bufOk}`:`🔴 ${t.bufFull}`}</div>
+  </div>);
 }
 
-// ── TEAM DASHBOARD (read-only for players) ──
-function TeamDashboard({team,t,compact=false}){
+function TeamDashboard({team,t}){
   const wip=WCS.reduce((n,wc)=>n+(team.queues[wc]?.length||0),0);
-  return(
-    <div style={{...G.card,marginBottom:8}}>
-      <div style={{fontWeight:700,fontSize:13,color:"#1B3A4B",marginBottom:10,display:"flex",justifyContent:"space-between"}}>
-        <span>{t.teamDashboard} — {team.name}</span>
-        <div style={G.row}>
-          <span style={{fontSize:11,color:"#64748B"}}>{t.wip}: <b>{wip}</b></span>
-          <span style={{fontSize:11,color:"#64748B"}}>{t.deck}: <b>{team.deck.length}</b></span>
-          <span style={{fontSize:11,color:"#2D7D52",fontWeight:600}}>✓ {team.completed.length}</span>
-        </div>
-      </div>
-      <div style={{display:"flex",gap:8}}>
-        {WCS.map(wc=>(
-          <div key={wc} style={{flex:1,minWidth:0,background:wc==="B"?"#FFFBEB":"#F9FAFB",border:`2px solid ${wc==="B"?"#D4500A":"#E5E7EB"}`,borderRadius:8,padding:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-              <div style={{display:"flex",alignItems:"center",gap:3}}>
-                <span style={{fontWeight:700,fontSize:12,color:wc==="B"?"#D4500A":"#1B3A4B"}}>WC-{wc}</span>
-                {wc==="B"&&<span style={{fontSize:8,background:"#D4500A",color:"#fff",padding:"1px 3px",borderRadius:2,fontWeight:700}}>{t.goulot}</span>}
-              </div>
-              <span style={{...G.tag(wc==="B"?"#D4500A":"#64748B"),fontSize:10,padding:"1px 4px"}}>{team.queues[wc]?.length||0}</span>
-            </div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
-              {(team.queues[wc]||[]).slice(0,8).map(card=><OrderCard key={card.id} card={card} compact/>)}
-              {(team.queues[wc]||[]).length>8&&<span style={{fontSize:10,color:"#94A3B8",alignSelf:"center"}}>+{team.queues[wc].length-8}</span>}
-            </div>
-          </div>
-        ))}
-      </div>
+  return(<div style={{...G.card,marginBottom:8}}>
+    <div style={{fontWeight:700,fontSize:13,color:"#1B3A4B",marginBottom:8,display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4}}>
+      <span>{t.teamDashboard} — {team.name}</span>
+      <div style={G.row}><span style={{fontSize:11,color:"#64748B"}}>{t.wip}: <b>{wip}</b></span><span style={{fontSize:11,color:"#64748B"}}>{t.deck}: <b>{team.deck.length}</b></span><span style={{fontSize:11,color:"#2D7D52",fontWeight:600}}>✓ {team.completed.length}</span><span style={{fontSize:11,color:(team.bufferB||0)>=(team.bufferLimit||5)?"#D4500A":"#64748B"}}>{t.buf}: {team.bufferB||0}/{team.bufferLimit||5}</span></div>
     </div>
-  );
-}
-
-// ── SCHEDULER VIEW ──
-function SchedulerView({session,team,t,onUpdate}){
-  const [selectedCard,setSelectedCard]=useState(null);
-  const [submitted,setSubmitted]=useState(false);
-  const [myAct,setMyAct]=useState(null);
-  const [dragOver,setDragOver]=useState(false);
-  const [bufferLimit,setBufferLimit]=useState(team.bufferLimit||5);
-
-  useEffect(()=>{setSubmitted(false);setMyAct(null);setSelectedCard(null);},[session.day,session.dayPhase]);
-  useEffect(()=>{
-    const iv=setInterval(async()=>{const ns=await loadSession(session.code);if(ns&&(ns.day!==session.day||ns.dayPhase!==session.dayPhase))onUpdate(ns);},2500);
-    return()=>clearInterval(iv);
-  },[session.code,session.day,session.dayPhase]);
-
-  const submit=async(action)=>{setMyAct(action);setSubmitted(true);await saveAction(session.code,team.id,"scheduler",session.day,action);};
-  const isDayOpen=session.dayPhase==="open";
-  const isS1=session.scenario===1;
-  const isS3=session.scenario===3;
-  const buf=calcBufB(team);
-  const limit=team.bufferLimit||bufferLimit||5;
-
-  const handleDrop=async(e)=>{
-    e.preventDefault();setDragOver(false);
-    if(submitted||!isDayOpen) return;
-    const cardId=e.dataTransfer.getData("cardId");
-    if(!cardId) return;
-    await submit(`release:${cardId}`);
-  };
-
-  // Save buffer limit to session
-  const saveBufferLimit=async(val)=>{
-    setBufferLimit(val);
-    const ns=JSON.parse(JSON.stringify(session));
-    Object.values(ns.teams).forEach(tm=>{tm.bufferLimit=val;});
-    await saveSession(session.code,ns);onUpdate(ns);
-  };
-
-  return(<div style={{padding:16}}>
-    <TeamDashboard team={team} t={t}/>
-    {isS3&&<BufferWindow team={team} t={t} bufferLimit={limit}/>}
-    {isS3&&(
-      <div style={{...G.card,marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
-        <span style={{fontSize:13,fontWeight:600,color:"#1B3A4B"}}>{t.bufferSize} :</span>
-        <input type="number" min={1} max={20} value={bufferLimit}
-          onChange={e=>setBufferLimit(+e.target.value)}
-          onBlur={e=>saveBufferLimit(+e.target.value)}
-          style={{width:60,padding:"4px 8px",border:"1.5px solid #D9D4C8",borderRadius:6,fontSize:14,textAlign:"center"}}/>
-      </div>
-    )}
-    <div style={G.card}>
-      <div style={{fontWeight:700,fontSize:13,color:"#1B3A4B",marginBottom:8}}>
-        {t.schedulerDeck} — {team.deck.length} {t.cardsLeft}
-      </div>
-      {isS1&&<div style={{fontSize:11,color:"#64748B",marginBottom:8,background:"#F0FDF4",padding:"4px 8px",borderRadius:4}}>S1 — {t.s1auto}</div>}
-      <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:12,maxHeight:380,overflowY:"auto"}}>
-        {team.deck.length===0
-          ?<div style={{color:"#94A3B8",fontSize:13,padding:12}}>{t.deckEmpty}</div>
-          :team.deck.map((card,i)=>(
-            <div key={card.id} draggable={isDayOpen&&!submitted&&!isS1} onDragStart={e=>{e.dataTransfer.setData("cardId",card.id);}}>
-              <OrderCard card={card} fifoNum={i+1}
-                selected={selectedCard===card.id}
-                selectable={isDayOpen&&!submitted&&!isS1}
-                onSelect={()=>setSelectedCard(selectedCard===card.id?null:card.id)}/>
-            </div>
-          ))
-        }
-      </div>
-      {/* S1 : bouton release FIFO */}
-      {isDayOpen&&isS1&&!submitted&&team.deck.length>0&&(
-        <button style={{...G.btn("#2D7D52"),width:"100%",marginBottom:8}} onClick={()=>submit('release')}>
-          📤 {t.releaseDeck} #{1} — {team.deck[0]?.id} (FIFO)
-        </button>
-      )}
-      {isDayOpen&&isS1&&!submitted&&team.deck.length===0&&(
-        <div style={{color:"#94A3B8",fontSize:13,padding:"8px 0"}}>{t.deckEmpty}</div>
-      )}
-      {/* S2/S3 : drag and drop + sélection libre */}
-      {isDayOpen&&!isS1&&!submitted&&(
-        <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={handleDrop}
-          style={{border:`2px dashed ${dragOver?"#2D7D52":"#D9D4C8"}`,borderRadius:8,padding:16,textAlign:"center",background:dragOver?"#DCFCE7":"#FAFAF8",marginBottom:8}}>
-          <div style={{fontSize:13,color:dragOver?"#2D7D52":"#94A3B8",fontWeight:dragOver?600:400}}>
-            {dragOver?`✓ ${t.dropOver}`:t.dropZone}
-          </div>
-        </div>
-      )}
-      {isDayOpen&&!isS1&&!submitted&&selectedCard&&(
-        <button style={{...G.btn("#2D7D52"),width:"100%",marginBottom:8}} onClick={()=>submit(`release:${selectedCard}`)}>📤 {t.releaseDeck} — {selectedCard}</button>
-      )}
-      {isDayOpen&&!isS1&&!submitted&&(
-        <button style={G.btn("#64748B")} onClick={()=>submit('hold')}>⏸ {t.hold}</button>
-      )}
-      {submitted&&<div style={{color:"#2D7D52",fontWeight:600,fontSize:14,padding:"8px 0"}}>{t.submitted} — {myAct?.startsWith("release:")?`${t.releaseDeck} ${myAct.slice(8)}`:myAct==="hold"?t.hold:t.releaseDeck}</div>}
-      {!isDayOpen&&<div style={{color:"#94A3B8",fontSize:13,padding:"8px 0"}}>{t.waitDay}</div>}
-    </div>
-    <div style={{...G.card,marginTop:8}}>
-      <div style={{fontWeight:600,fontSize:12,color:"#2D7D52",marginBottom:6}}>{t.completedCards}: {team.completed.length}</div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-        {team.completed.map(c=><OrderCard key={c.id} card={c} compact/>)}
-      </div>
+    <div style={{display:"flex",gap:8}}>
+      {WCS.map(wc=>(<div key={wc} style={{flex:1,minWidth:0,background:wc==="B"?"#FFFBEB":"#F9FAFB",border:`2px solid ${wc==="B"?"#D4500A":"#E5E7EB"}`,borderRadius:8,padding:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}><div style={{display:"flex",alignItems:"center",gap:3}}><span style={{fontWeight:700,fontSize:12,color:wc==="B"?"#D4500A":"#1B3A4B"}}>WC-{wc}</span>{wc==="B"&&<span style={{fontSize:8,background:"#D4500A",color:"#fff",padding:"1px 3px",borderRadius:2,fontWeight:700}}>{t.goulot}</span>}</div><span style={{...G.tag(wc==="B"?"#D4500A":"#64748B"),fontSize:10,padding:"1px 4px"}}>{team.queues[wc]?.length||0}</span></div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:3}}>{(team.queues[wc]||[]).slice(0,6).map(card=><OrderCard key={card.id} card={card} compact/>)}{(team.queues[wc]||[]).length>6&&<span style={{fontSize:10,color:"#94A3B8",alignSelf:"center"}}>+{team.queues[wc].length-6}</span>}</div>
+      </div>))}
     </div>
   </div>);
 }
 
-// ── OPERATOR VIEW ──
-function OperatorView({session,team,role,t,onUpdate}){
-  const [selectedCard,setSelectedCard]=useState(null);
-  const [submitted,setSubmitted]=useState(false);
-  const [droppedCard,setDroppedCard]=useState(null);
-  const [dragOver,setDragOver]=useState(false);
-
-  useEffect(()=>{setSubmitted(false);setSelectedCard(null);setDroppedCard(null);},[session.day,session.dayPhase]);
+function ChartsView({session,results,t}){
+  const scatterRef=useRef(null);const scatterChart=useRef(null);
+  const barRef=useRef(null);const barChart=useRef(null);
+  const names=t.scnNames.slice(1);
+  const getLiveData=(i)=>{
+    if(results[i]?.completed)return results[i].completed;
+    if(session&&session.scenario===i&&session.teams){const live=Object.values(session.teams).flatMap(tm=>(tm.completed||[]).map(c=>({...c,teamId:tm.id})));return live.length?live:null;}
+    return null;
+  };
+  const scnData=[1,2,3].map(i=>getLiveData(i));
+  const statsArr=scnData.map(d=>d?computeStats(d):null);
   useEffect(()=>{
-    const iv=setInterval(async()=>{const ns=await loadSession(session.code);if(ns&&(ns.day!==session.day||ns.dayPhase!==session.dayPhase))onUpdate(ns);},2500);
-    return()=>clearInterval(iv);
-  },[session.code,session.day,session.dayPhase]);
+    if(!scatterRef.current)return;if(scatterChart.current){scatterChart.current.destroy();scatterChart.current=null;}
+    const datasets=scnData.map((d,i)=>d?{label:names[i],data:d.map(c=>({x:c.releaseDay,y:c.flowDays})).filter(p=>p.x!=null&&p.y!=null),backgroundColor:SC[i],pointRadius:5}:null).filter(Boolean);
+    if(!datasets.length)return;
+    scatterChart.current=new Chart(scatterRef.current,{type:"scatter",data:{datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{boxWidth:10,font:{size:11}}}},scales:{x:{title:{display:true,text:t.relDay,font:{size:11}},ticks:{stepSize:1,font:{size:10}}},y:{title:{display:true,text:t.flowDays,font:{size:11}},ticks:{stepSize:1,font:{size:10}}}}}});
+    return()=>{if(scatterChart.current){scatterChart.current.destroy();scatterChart.current=null;}};
+  },[JSON.stringify(scnData)]);
+  useEffect(()=>{
+    if(!barRef.current)return;if(barChart.current){barChart.current.destroy();barChart.current=null;}
+    const allFlows=scnData.filter(Boolean).flatMap(d=>d.map(c=>c.flowDays).filter(v=>v!=null));
+    if(!allFlows.length)return;
+    const mx=Math.max(...allFlows);const labels=Array.from({length:mx},(_,i)=>String(i+1));
+    const datasets=scnData.map((d,i)=>d?{label:names[i],data:Array.from({length:mx},(_,j)=>d.filter(c=>c.flowDays===j+1).length),backgroundColor:SC[i]}:null).filter(Boolean);
+    if(!datasets.length)return;
+    barChart.current=new Chart(barRef.current,{type:"bar",data:{labels,datasets},options:{responsive:false,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{boxWidth:10,font:{size:11}}}},scales:{x:{ticks:{font:{size:9}}},y:{ticks:{font:{size:10},stepSize:1}}}}});
+    return()=>{if(barChart.current){barChart.current.destroy();barChart.current=null;}};
+  },[JSON.stringify(scnData)]);
+  return(<div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+      {[0,1,2].map(i=>statsArr[i]?(<div key={i} style={{...G.card,borderTop:`3px solid ${SC[i]}`,padding:12}}><div style={{fontWeight:700,color:SC[i],marginBottom:8,fontSize:12}}>S{i+1} — {names[i]}</div>{[[t.count,statsArr[i].count],[t.min,statsArr[i].min],[t.max,statsArr[i].max],[t.avg,statsArr[i].avg],[t.stddev,statsArr[i].stddev],[t.median,statsArr[i].median]].map(([l,v])=>(<div key={l} style={{display:"flex",justifyContent:"space-between",padding:"2px 0",borderBottom:"1px solid #F8FAFC",fontSize:12}}><span style={{color:"#64748B"}}>{l}</span><span style={{fontWeight:700}}>{v}</span></div>))}</div>):(<div key={i} style={{...G.card,textAlign:"center",color:"#CBD5E1",padding:16,fontSize:12}}><div style={{fontSize:20,marginBottom:4}}>—</div>S{i+1} — {names[i]}<br/>{t.noData}</div>))}
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      <div style={G.card}><div style={{fontWeight:600,fontSize:12,marginBottom:6,color:"#1B3A4B"}}>{t.scatterT}</div><div style={{height:200,position:"relative"}}><canvas ref={scatterRef}/></div></div>
+      <div style={G.card}><div style={{fontWeight:600,fontSize:12,marginBottom:6,color:"#1B3A4B"}}>{t.histoT}</div><div style={{overflowX:"auto"}}><div style={{height:200,position:"relative",minWidth:500}}><canvas ref={barRef}/></div></div></div>
+    </div>
+  </div>);
+}
 
-  const wcKey=role.split("-")[1].toUpperCase();
-  const myQueue=team.queues[wcKey]||[];
-  const isS1=session.scenario===1;
-  const isDayOpen=session.dayPhase==="open";
-  const isS3=session.scenario===3;
-  const limit=team.bufferLimit||5;
+function LiveChartsModal({session,t,onClose}){
+  const teams=Object.values(session.teams||{});const [selTeam,setSelTeam]=useState(null);
+  return(<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:1000,overflowY:"auto",padding:16}}>
+    <div style={{background:"#fff",borderRadius:12,padding:20,maxWidth:900,margin:"0 auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><h3 style={{margin:0,color:"#1B3A4B"}}>{t.liveCharts}</h3><button style={G.btn("#64748B")} onClick={onClose}>{t.closeModal}</button></div>
+      {teams.length>1&&(<div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}><button style={G.btn(selTeam===null?"#1B3A4B":"#94A3B8")} onClick={()=>setSelTeam(null)}>Toutes les équipes</button>{teams.map(tm=><button key={tm.id} style={G.btn(selTeam===tm.id?"#1B3A4B":"#94A3B8")} onClick={()=>setSelTeam(tm.id)}>{tm.name}</button>)}</div>)}
+      <ChartsView session={session} results={session.results||{}} t={t} teamFilter={selTeam}/>
+    </div>
+  </div>);
+}
 
+function SchedulerView({session,team,t,onUpdate}){
+  const [selectedCard,setSelectedCard]=useState(null);const [submitted,setSubmitted]=useState(false);const [pendingCard,setPendingCard]=useState(null);const [dragOver,setDragOver]=useState(false);const [bufInput,setBufInput]=useState(team.bufferLimit||5);
+  useEffect(()=>{setSubmitted(false);setSelectedCard(null);setPendingCard(null);},[session.day,session.dayPhase]);
+  useEffect(()=>{const iv=setInterval(async()=>{const ns=await loadSession(session.code);if(ns&&(ns.day!==session.day||ns.dayPhase!==session.dayPhase))onUpdate(ns);},2500);return()=>clearInterval(iv);},[session.code,session.day,session.dayPhase]);
+  const submit=async(action,card)=>{if(card)setPendingCard(card);setSubmitted(true);await saveAction(session.code,team.id,"scheduler",session.day,action);};
+  const saveBuffer=async(val)=>{setBufInput(val);const ns=JSON.parse(JSON.stringify(session));Object.values(ns.teams).forEach(tm=>{tm.bufferLimit=val;});await saveSession(session.code,ns);onUpdate(ns);};
+  const isDayOpen=session.dayPhase==="open";const isS3=session.scenario===3;const bufferLocked=team.bufferLimit!=null;const limit=team.bufferLimit||bufInput||5;
+  const handleDrop=async(e)=>{e.preventDefault();setDragOver(false);if(submitted||!isDayOpen)return;const cardId=e.dataTransfer.getData("cardId");if(!cardId)return;const card=team.deck.find(c=>c.id===cardId);await submit(`release:${cardId}`,card);};
+  return(<div style={{padding:16}}>
+    <TeamDashboard team={team} t={t}/>
+    {isS3&&<BufferWindow team={team} t={t} bufferLimit={limit}/>}
+    {isS3&&(<div style={{...G.card,marginBottom:8}}>{!bufferLocked?(<div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}><span style={{fontSize:13,fontWeight:600,color:"#1B3A4B"}}>{t.bufferSize}</span><input type="number" min={1} max={20} value={bufInput} onChange={e=>setBufInput(+e.target.value)} style={{width:60,padding:"4px 8px",border:"1.5px solid #D9D4C8",borderRadius:6,fontSize:14,textAlign:"center"}}/><button style={G.btn("#2D7D52")} onClick={()=>saveBuffer(bufInput)}>Valider</button></div>):(<div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,color:"#64748B"}}>{t.bufferLocked}</span><span style={{...G.tag("#2D7D52"),fontSize:13,padding:"3px 10px"}}>{limit}</span></div>)}</div>)}
+    <div style={G.card}>
+      <div style={{fontWeight:700,fontSize:13,color:"#1B3A4B",marginBottom:8}}>{t.schedulerDeck} — {team.deck.length} {t.cardsLeft}</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:12,maxHeight:380,overflowY:"auto"}}>
+        {team.deck.length===0?<div style={{color:"#94A3B8",fontSize:13,padding:8}}>{t.deckEmpty}</div>:team.deck.map(card=>(<div key={card.id} draggable={isDayOpen&&!submitted} onDragStart={e=>e.dataTransfer.setData("cardId",card.id)}><OrderCard card={card} selected={selectedCard===card.id} selectable={isDayOpen&&!submitted} onSelect={()=>setSelectedCard(selectedCard===card.id?null:card.id)}/></div>))}
+      </div>
+      {isDayOpen&&!submitted&&(<div>
+        <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={handleDrop} style={{border:`2px dashed ${dragOver?"#2D7D52":"#D9D4C8"}`,borderRadius:8,padding:16,textAlign:"center",background:dragOver?"#DCFCE7":"#FAFAF8",marginBottom:8,minHeight:60,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{fontSize:13,color:dragOver?"#2D7D52":"#94A3B8",fontWeight:dragOver?600:400}}>{dragOver?`✓ ${t.dropOver}`:t.dropZone}</div>
+        </div>
+        {selectedCard&&<button style={{...G.btn("#2D7D52"),width:"100%",marginBottom:8}} onClick={()=>{const c=team.deck.find(x=>x.id===selectedCard);submit(`release:${selectedCard}`,c);}}>📤 {t.releaseDeck} — {selectedCard}</button>}
+        <button style={G.btn("#64748B")} onClick={()=>submit('hold',null)}>⏸ {t.hold}</button>
+      </div>)}
+      {isDayOpen&&!submitted&&team.deck.length===0&&(<button style={{...G.btn("#1B3A4B"),width:"100%",marginTop:8}} onClick={()=>submit('hold',null)}>✓ {t.validateDay}</button>)}
+      {submitted&&pendingCard&&(<div style={{border:"2px solid #2D7D52",borderRadius:8,padding:12,background:"#F0FDF4",marginTop:8}}><div style={{fontSize:11,color:"#2D7D52",fontWeight:700,marginBottom:6}}>📤 {t.pendingRelease}</div><OrderCard card={pendingCard}/></div>)}
+      {submitted&&!pendingCard&&<div style={{color:"#64748B",fontWeight:600,fontSize:13,padding:"8px 0"}}>{t.submitted} — {t.hold}</div>}
+      {!isDayOpen&&<div style={{color:"#94A3B8",fontSize:13,padding:"8px 0"}}>{t.waitDay}</div>}
+    </div>
+    <div style={{...G.card,marginTop:8}}><div style={{fontWeight:600,fontSize:12,color:"#2D7D52",marginBottom:6}}>{t.completedCards}: {team.completed.length}</div><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{team.completed.map(c=><OrderCard key={c.id} card={c} compact/>)}</div></div>
+  </div>);
+}
+
+function OperatorView({session,team,role,t,onUpdate}){
+  const [selectedCard,setSelectedCard]=useState(null);const [submitted,setSubmitted]=useState(false);const [droppedCard,setDroppedCard]=useState(null);const [dragOver,setDragOver]=useState(false);
+  useEffect(()=>{setSubmitted(false);setSelectedCard(null);setDroppedCard(null);},[session.day,session.dayPhase]);
+  useEffect(()=>{const iv=setInterval(async()=>{const ns=await loadSession(session.code);if(ns&&(ns.day!==session.day||ns.dayPhase!==session.dayPhase))onUpdate(ns);},2500);return()=>clearInterval(iv);},[session.code,session.day,session.dayPhase]);
+  const wcKey=role.split("-")[1].toUpperCase();const myQueue=team.queues[wcKey]||[];const isDayOpen=session.dayPhase==="open";const isS3=session.scenario===3;const limit=team.bufferLimit||5;
   const submit=async(cardId)=>{
     const card=myQueue.find(c=>c.id===cardId);
-    if(card){
-      const processed={...card,ops:card.ops.map((op,i)=>i===card.currentOpIdx?{...op,dayComplete:session.day,done:true}:op)};
-      setDroppedCard(processed);
-    }
-    setSubmitted(true);setSelectedCard(cardId);
-    await saveAction(session.code,team.id,role,session.day,cardId||'pass');
+    if(card){const processed=JSON.parse(JSON.stringify(card));processed.ops[processed.currentOpIdx].dayComplete=session.day;processed.ops[processed.currentOpIdx].done=true;setDroppedCard(processed);}
+    setSubmitted(true);setSelectedCard(cardId);await saveAction(session.code,team.id,role,session.day,cardId||'pass');
   };
-
-  const handleDrop=async(e)=>{
-    e.preventDefault();setDragOver(false);
-    if(submitted||!isDayOpen) return;
-    const cardId=e.dataTransfer.getData("cardId");
-    if(!cardId) return;
-    if(isS1&&myQueue.length>0&&cardId!==myQueue[0].id){alert("S1 — FIFO : vous devez traiter la première carte de la file.");return;}
-    await submit(cardId);
-  };
-
+  const handleDrop=async(e)=>{e.preventDefault();setDragOver(false);if(submitted||!isDayOpen)return;const cardId=e.dataTransfer.getData("cardId");if(cardId)await submit(cardId);};
   return(<div style={{padding:16}}>
     <TeamDashboard team={team} t={t}/>
     {isS3&&<BufferWindow team={team} t={t} bufferLimit={limit}/>}
     <div style={G.card}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-        <div style={{fontWeight:700,fontSize:13,color:wcKey==="B"?"#D4500A":"#1B3A4B",display:"flex",alignItems:"center",gap:6}}>
-          {t.roles[role]}
-          {wcKey==="B"&&<span style={{fontSize:9,background:"#D4500A",color:"#fff",padding:"1px 5px",borderRadius:3}}>{t.goulot}</span>}
-        </div>
-        <span style={{fontSize:12,color:"#64748B"}}>{t.yourQ}: <b>{myQueue.length}</b></span>
-      </div>
-      {/* Card queue */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontWeight:700,fontSize:13,color:wcKey==="B"?"#D4500A":"#1B3A4B",display:"flex",alignItems:"center",gap:6}}>{t.roles[role]}{wcKey==="B"&&<span style={{fontSize:9,background:"#D4500A",color:"#fff",padding:"1px 5px",borderRadius:3}}>{t.goulot}</span>}</div><span style={{fontSize:12,color:"#64748B"}}>{t.yourQ}: <b>{myQueue.length}</b></span></div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:12,minHeight:50}}>
-        {myQueue.length===0
-          ?<div style={{color:"#94A3B8",fontSize:13}}>{t.emptyQ}</div>
-          :myQueue.map((card,i)=>{
-            const isFirst=i===0;
-            const canDrag=isDayOpen&&!submitted&&(!isS1||isFirst);
-            const canSelect=isDayOpen&&!submitted&&!isS1;
-            return(
-              <div key={card.id} draggable={canDrag} onDragStart={e=>e.dataTransfer.setData("cardId",card.id)}
-                style={{opacity:isS1&&!isFirst?0.45:1,cursor:canDrag?"grab":"default"}}>
-                <OrderCard card={card} selected={(!isS1&&selectedCard===card.id)||(isS1&&isFirst)}
-                  selectable={canSelect} onSelect={()=>canSelect&&setSelectedCard(selectedCard===card.id?null:card.id)}/>
-              </div>
-            );
-          })
-        }
+        {myQueue.length===0?<div style={{color:"#94A3B8",fontSize:13}}>{t.emptyQ}</div>:myQueue.map((card)=>(<div key={card.id} draggable={isDayOpen&&!submitted} onDragStart={e=>e.dataTransfer.setData("cardId",card.id)} style={{cursor:isDayOpen&&!submitted?"grab":"default"}}><OrderCard card={card} selected={selectedCard===card.id} selectable={isDayOpen&&!submitted} onSelect={()=>isDayOpen&&!submitted&&setSelectedCard(selectedCard===card.id?null:card.id)}/></div>))}
       </div>
-      {/* Drop zone */}
-      {isDayOpen&&!submitted&&(
-        <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={handleDrop}
-          style={{border:`2px dashed ${dragOver?"#2D7D52":"#D9D4C8"}`,borderRadius:8,padding:droppedCard?0:16,textAlign:"center",background:dragOver?"#DCFCE7":"#FAFAF8",marginBottom:8,minHeight:60,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          {!submitted&&!droppedCard&&<div style={{fontSize:13,color:dragOver?"#2D7D52":"#94A3B8",fontWeight:dragOver?600:400,padding:16}}>{dragOver?`✓ ${t.dropOver}`:t.dropZone}{isS1&&<div style={{fontSize:10,color:"#94A3B8",marginTop:2}}>S1 — FIFO</div>}</div>}
-        </div>
-      )}
-      {/* Show dropped card in zone */}
-      {submitted&&droppedCard&&(
-        <div style={{border:"2px solid #2D7D52",borderRadius:8,padding:12,background:"#F0FDF4",marginBottom:8}}>
-          <div style={{fontSize:11,color:"#2D7D52",fontWeight:700,marginBottom:6}}>✓ {t.processed} — {t.day} {session.day}</div>
-          <OrderCard card={droppedCard}/>
-        </div>
-      )}
-      {/* Fallback buttons */}
-      {isDayOpen&&!submitted&&!isS1&&selectedCard&&(
-        <button style={{...G.btn(wcKey==="B"?"#D4500A":"#1B3A4B"),width:"100%",marginBottom:8}} onClick={()=>submit(selectedCard)}>⚙ {t.proc} — {selectedCard}</button>
-      )}
-      {isDayOpen&&!submitted&&isS1&&myQueue.length>0&&(
-        <button style={{...G.btn(wcKey==="B"?"#D4500A":"#1B3A4B"),width:"100%",marginBottom:8}} onClick={()=>submit(myQueue[0].id)}>⚙ {t.proc} — {myQueue[0].id} (FIFO)</button>
-      )}
+      {isDayOpen&&(<div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={handleDrop} style={{border:`2px dashed ${dragOver?"#2D7D52":submitted&&droppedCard?"#2D7D52":"#D9D4C8"}`,borderRadius:8,padding:submitted&&droppedCard?12:16,background:dragOver?"#DCFCE7":submitted&&droppedCard?"#F0FDF4":"#FAFAF8",marginBottom:8,minHeight:60,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:6}}>
+        {submitted&&droppedCard?(<div style={{width:"100%"}}><div style={{fontSize:11,color:"#2D7D52",fontWeight:700,marginBottom:6}}>✓ {t.processed} — {t.day} {session.day}</div><OrderCard card={droppedCard}/></div>):(<div style={{fontSize:13,color:dragOver?"#2D7D52":"#94A3B8",fontWeight:dragOver?600:400}}>{dragOver?`✓ ${t.dropOver}`:t.dropZone}</div>)}
+      </div>)}
+      {isDayOpen&&!submitted&&selectedCard&&<button style={{...G.btn(wcKey==="B"?"#D4500A":"#1B3A4B"),width:"100%",marginBottom:8}} onClick={()=>submit(selectedCard)}>⚙ {t.proc} — {selectedCard}</button>}
       {isDayOpen&&!submitted&&<button style={G.btn("#64748B")} onClick={()=>submit('pass')}>⏭ {t.pass}</button>}
       {submitted&&!droppedCard&&<div style={{color:"#2D7D52",fontWeight:600,fontSize:14,padding:"8px 0"}}>{t.submitted}</div>}
       {!isDayOpen&&<div style={{color:"#94A3B8",fontSize:13,padding:"8px 0"}}>{t.waitDay}</div>}
     </div>
-    {/* Completed cards */}
-    <div style={{...G.card,marginTop:8}}>
-      <div style={{fontWeight:600,fontSize:12,color:"#2D7D52",marginBottom:8}}>{t.completedCards}: {team.completed.length}</div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-        {team.completed.map(c=><OrderCard key={c.id} card={c}/>)}
-      </div>
-    </div>
+    <div style={{...G.card,marginTop:8}}><div style={{fontWeight:600,fontSize:12,color:"#2D7D52",marginBottom:6}}>{t.completedCards}: {team.completed.length}</div><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{team.completed.map(c=><OrderCard key={c.id} card={c}/>)}</div></div>
   </div>);
 }
 
-// ── MONITOR VIEW ──
 function MonitorView({session,team,t,onUpdate}){
-  useEffect(()=>{
-    const iv=setInterval(async()=>{const ns=await loadSession(session.code);if(ns)onUpdate(ns);},2500);
-    return()=>clearInterval(iv);
-  },[session.code,session.day,session.dayPhase]);
+  useEffect(()=>{const iv=setInterval(async()=>{const ns=await loadSession(session.code);if(ns)onUpdate(ns);},2500);return()=>clearInterval(iv);},[session.code]);
   const isS3=session.scenario===3;
-  const limit=team.bufferLimit||5;
   return(<div style={{padding:16}}>
     <TeamDashboard team={team} t={t}/>
-    {isS3&&<BufferWindow team={team} t={t} bufferLimit={limit}/>}
-    <div style={{...G.card,marginTop:8}}>
-      <div style={{fontWeight:600,marginBottom:8,color:"#2D7D52",fontSize:13}}>{t.completedCards}: {team.completed.length}</div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-        {team.completed.map(c=><OrderCard key={c.id} card={c}/>)}
-      </div>
-    </div>
+    {isS3&&<BufferWindow team={team} t={t} bufferLimit={team.bufferLimit||5}/>}
+    <div style={{...G.card,marginBottom:12}}><div style={{fontWeight:600,marginBottom:8,color:"#2D7D52",fontSize:13}}>{t.completedCards}: {team.completed.length}</div><div style={{display:"flex",flexWrap:"wrap",gap:8}}>{team.completed.map(c=><OrderCard key={c.id} card={c}/>)}</div></div>
+    <ChartsView session={session} results={session.results||{}} t={t}/>
   </div>);
 }
 
-// ── CHARTS COMPONENT ──
-function ChartsView({results,t,teamFilter=null}){
-  const scatterRef=useRef(null);const scatterChart=useRef(null);
-  const barRef=useRef(null);const barChart=useRef(null);
-  const names=t.scnNames.slice(1);
-
-  const getCompleted=(i)=>{
-    if(!results[i]) return null;
-    let cards=results[i].completed;
-    if(teamFilter) cards=cards.filter(c=>c.teamId===teamFilter||(results[i].teams&&results[i].teams[teamFilter]));
-    return cards.length?cards:null;
-  };
-
-  const scnData=[1,2,3].map(i=>getCompleted(i));
-
-  useEffect(()=>{
-    if(!scatterRef.current) return;
-    if(scatterChart.current){scatterChart.current.destroy();scatterChart.current=null;}
-    const datasets=scnData.map((d,i)=>d?{label:names[i],data:d.map(c=>({x:c.releaseDay,y:c.flowDays})).filter(p=>p.x!=null&&p.y!=null),backgroundColor:SC[i],pointRadius:5}:null).filter(Boolean);
-    if(!datasets.length) return;
-    scatterChart.current=new Chart(scatterRef.current,{type:"scatter",data:{datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{boxWidth:10,font:{size:11}}}},scales:{x:{title:{display:true,text:t.relDay,font:{size:11}},ticks:{stepSize:1,font:{size:10}}},y:{title:{display:true,text:t.flowDays,font:{size:11}},ticks:{stepSize:1,font:{size:10}}}}}});
-    return()=>{if(scatterChart.current){scatterChart.current.destroy();scatterChart.current=null;}};
-  },[JSON.stringify(results)]);
-
-  useEffect(()=>{
-    if(!barRef.current) return;
-    if(barChart.current){barChart.current.destroy();barChart.current=null;}
-    const allFlows=scnData.filter(Boolean).flatMap(d=>d.map(c=>c.flowDays).filter(v=>v!=null));
-    if(!allFlows.length) return;
-    const mx=Math.max(...allFlows);
-    const labels=Array.from({length:mx},(_,i)=>String(i+1));
-    const datasets=scnData.map((d,i)=>d?{label:names[i],data:Array.from({length:mx},(_,j)=>d.filter(c=>c.flowDays===j+1).length),backgroundColor:SC[i]}:null).filter(Boolean);
-    if(!datasets.length) return;
-    barChart.current=new Chart(barRef.current,{type:"bar",data:{labels,datasets},options:{responsive:false,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{boxWidth:10,font:{size:11}}}},scales:{x:{ticks:{font:{size:9}}},y:{ticks:{font:{size:10},stepSize:1}}}}});
-    return()=>{if(barChart.current){barChart.current.destroy();barChart.current=null;}};
-  },[JSON.stringify(results)]);
-
-  const statsArr=scnData.map(d=>d?computeStats(d):null);
-
-  return(<div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
-      {[0,1,2].map(i=>statsArr[i]?(
-        <div key={i} style={{...G.card,borderTop:`3px solid ${SC[i]}`,padding:12}}>
-          <div style={{fontWeight:700,color:SC[i],marginBottom:8,fontSize:12}}>S{i+1} — {names[i]}</div>
-          {[[t.count,statsArr[i].count],[t.min,statsArr[i].min],[t.max,statsArr[i].max],[t.avg,statsArr[i].avg],[t.stddev,statsArr[i].stddev],[t.median,statsArr[i].median]].map(([l,v])=>(
-            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"2px 0",borderBottom:"1px solid #F8FAFC",fontSize:12}}>
-              <span style={{color:"#64748B"}}>{l}</span><span style={{fontWeight:700}}>{v}</span>
-            </div>
-          ))}
-        </div>
-      ):(
-        <div key={i} style={{...G.card,textAlign:"center",color:"#CBD5E1",padding:16,fontSize:12}}><div style={{fontSize:22,marginBottom:4}}>—</div>S{i+1} — {names[i]}<br/>{t.noData}</div>
-      ))}
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-      <div style={G.card}>
-        <div style={{fontWeight:600,fontSize:12,marginBottom:6,color:"#1B3A4B"}}>{t.scatterT}</div>
-        <div style={{height:200,position:"relative"}}><canvas ref={scatterRef}/></div>
-      </div>
-      <div style={G.card}>
-        <div style={{fontWeight:600,fontSize:12,marginBottom:6,color:"#1B3A4B"}}>{t.histoT}</div>
-        <div style={{overflowX:"auto"}}><div style={{height:200,position:"relative",minWidth:500}}><canvas ref={barRef}/></div></div>
-      </div>
-    </div>
-  </div>);
-}
-
-// ── LIVE CHARTS MODAL ──
-function LiveChartsModal({session,t,onClose}){
-  const teams=Object.values(session.teams||{});
-  const [selTeam,setSelTeam]=useState(null);
-  const isFac=true;
-  return(
-    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:1000,overflowY:"auto",padding:16}}>
-      <div style={{background:"#fff",borderRadius:12,padding:20,maxWidth:900,margin:"0 auto"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <h3 style={{margin:0,color:"#1B3A4B"}}>{t.liveCharts}</h3>
-          <button style={G.btn("#64748B")} onClick={onClose}>{t.closeModal}</button>
-        </div>
-        {teams.length>1&&(
-          <div style={{display:"flex",gap:8,marginBottom:12}}>
-            <button style={G.btn(selTeam===null?"#1B3A4B":"#94A3B8")} onClick={()=>setSelTeam(null)}>Toutes les équipes</button>
-            {teams.map(tm=><button key={tm.id} style={G.btn(selTeam===tm.id?"#1B3A4B":"#94A3B8")} onClick={()=>setSelTeam(tm.id)}>{tm.name}</button>)}
-          </div>
-        )}
-        <ChartsView results={session.results||{}} t={t} teamFilter={selTeam}/>
-      </div>
-    </div>
-  );
-}
-
-// ── FACILITATOR VIEW ──
 function FacilitatorView({session,onUpdate,t,onDebrief}){
-  const [actStatus,setActStatus]=useState({});
-  const [loading,setLoading]=useState(false);
-  const [showCharts,setShowCharts]=useState(false);
+  const [actStatus,setActStatus]=useState({});const [loading,setLoading]=useState(false);const [showCharts,setShowCharts]=useState(false);
   const teams=Object.values(session.teams||{});
-
   useEffect(()=>{
-    if(session.dayPhase!=="open") return;
+    if(session.dayPhase!=="open")return;
     const iv=setInterval(async()=>{
-      const st={};
-      for(const tm of teams) st[tm.id]=await loadAllActions(session.code,tm.id,session.day);
-      setActStatus(st);
-      const humanRoles=teams.flatMap(tm=>getHumanRoles(tm));
-      const gotActs=teams.reduce((n,tm)=>n+Object.keys(st[tm.id]||{}).filter(r=>r!=="monitor"&&!isAuto(tm,r)).length,0);
-      if(gotActs>=humanRoles.length&&humanRoles.length>0){doCloseDay(st);}
+      const st={};for(const tm of teams)st[tm.id]=await loadAllActions(session.code,tm.id,session.day);setActStatus(st);
+      const humanRoles=teams.flatMap(tm=>getHumanRoles(tm));const gotActs=teams.reduce((n,tm)=>n+Object.keys(st[tm.id]||{}).filter(r=>r!=="monitor"&&!isAuto(tm,r)).length,0);
+      if(gotActs>=humanRoles.length&&humanRoles.length>0)doCloseDay(st);
     },2500);
     return()=>clearInterval(iv);
   },[session.dayPhase,session.day]);
-
   const doCloseDay=async(acts)=>{
-    if(loading) return;
-    setLoading(true);
+    if(loading)return;setLoading(true);
     const updTeams={...session.teams};
-    for(const tm of teams){
-      const a=acts||await loadAllActions(session.code,tm.id,session.day);
-      updTeams[tm.id]=applyDay(tm,session.day,session.scenario,a);
-    }
+    for(const tm of teams){const a=acts||await loadAllActions(session.code,tm.id,session.day);updTeams[tm.id]=applyDay(tm,session.day,session.scenario,a);}
     const allDone=Object.values(updTeams).every(tm=>tm.deck.length===0&&WCS.every(wc=>tm.queues[wc].length===0));
     const ns={...session,teams:updTeams,dayPhase:allDone?"scnEnd":"idle"};
     await saveSession(session.code,ns);onUpdate(ns);setLoading(false);
   };
-
-  const openDay=async()=>{
-    const ns={...session,dayPhase:"open",day:session.day+1};
-    setActStatus({});await saveSession(session.code,ns);onUpdate(ns);
-  };
-
+  const openDay=async()=>{const ns={...session,dayPhase:"open",day:session.day+1};setActStatus({});await saveSession(session.code,ns);onUpdate(ns);};
   const startScenario=async(scnNum)=>{
-    const copies=session.cardCopies||5;
-    const newTeams={};
-    let s1Deck=null;
-    if(scnNum===3&&session.results&&session.results[1]){
-      s1Deck=session.results[1].deck;
-    }
-    Object.values(session.teams).forEach(tm=>{
-      const deck=s1Deck?JSON.parse(JSON.stringify(s1Deck)):mkDeck(copies);
-      newTeams[tm.id]={...tm,deck,queues:{A:[],B:[],C:[],D:[]},completed:[],bufferB:0,bufferLimit:tm.bufferLimit||5};
-    });
-    const ns={...session,scenario:scnNum,day:0,dayPhase:"idle",status:"playing",teams:newTeams};
-    await saveSession(session.code,ns);onUpdate(ns);
+    const copies=session.cardCopies||5;const newTeams={};
+    let s1Deck=null;if(scnNum===3&&session.results&&session.results[1]&&session.results[1].deck)s1Deck=session.results[1].deck;
+    Object.values(session.teams).forEach(tm=>{const deck=s1Deck?JSON.parse(JSON.stringify(s1Deck)):mkDeck(copies);newTeams[tm.id]={...tm,deck,queues:{A:[],B:[],C:[],D:[]},completed:[],bufferB:0,bufferLimit:scnNum===3?null:tm.bufferLimit};});
+    const ns={...session,scenario:scnNum,day:0,dayPhase:"idle",status:"playing",teams:newTeams};await saveSession(session.code,ns);onUpdate(ns);
   };
-
   const goNext=async()=>{
     const res={...session.results};
-    res[session.scenario]={
-      completed:Object.values(session.teams).flatMap(tm=>tm.completed.map(c=>({...c,teamId:tm.id}))),
-      deck:session.scenario===1?JSON.parse(JSON.stringify(Object.values(session.teams)[0]?.deck||[])):undefined,
-    };
-    const ns={...session,results:res,dayPhase:"idle"};
-    await saveSession(session.code,ns);
-    if(Object.values(res).filter(Boolean).length>=3){onDebrief(res);return;}
-    onUpdate(ns);
+    res[session.scenario]={completed:Object.values(session.teams).flatMap(tm=>tm.completed.map(c=>({...c,teamId:tm.id}))),deck:session.scenario===1?JSON.parse(JSON.stringify(Object.values(session.teams)[0]?.deck||[])):undefined};
+    const ns={...session,results:res,dayPhase:"idle"};await saveSession(session.code,ns);
+    if(Object.values(res).filter(Boolean).length>=3){onDebrief(res);return;}onUpdate(ns);
   };
-
   const played=session.results?Object.keys(session.results).filter(k=>session.results[k]!=null).map(Number):[];
   const isScnEnd=session.dayPhase==="scnEnd";
   const humanRoles=teams.flatMap(tm=>getHumanRoles(tm));
   const gotActs=teams.reduce((n,tm)=>n+Object.keys(actStatus[tm.id]||{}).filter(r=>r!=="monitor"&&!isAuto(tm,r)).length,0);
   const allIn=gotActs>=humanRoles.length&&humanRoles.length>0;
-
   return(<div style={{padding:16}}>
     {showCharts&&<LiveChartsModal session={session} t={t} onClose={()=>setShowCharts(false)}/>}
-    {/* Scenario controls */}
     <div style={{...G.card,marginBottom:12}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
         <div style={G.row}>
-          {[1,2,3].map(s=>{
-            const active=session.scenario===s&&session.status==="playing";
-            const done=played.includes(s);
-            return(
-              <button key={s} style={{...G.btn(active?SC[s-1]:done?"#94A3B8":"#1B3A4B"),fontSize:12,padding:"7px 14px"}}
-                onClick={()=>startScenario(s)}>
-                {done&&!active?"✓ ":""}{t.startScn} S{s} — {t.scnNames[s]}
-              </button>
-            );
-          })}
+          {[1,2,3].map(s=>{const active=session.scenario===s&&session.status==="playing";const done=played.includes(s);return(<button key={s} style={{...G.btn(active?SC[s-1]:done?"#94A3B8":"#1B3A4B"),fontSize:12,padding:"7px 14px"}} onClick={()=>startScenario(s)}>{done&&!active?"✓ ":""}{t.startScn} S{s} — {t.scnNames[s]}</button>);})}
           <button style={{...G.btn("#64748B"),fontSize:12,padding:"7px 14px"}} onClick={()=>setShowCharts(true)}>{t.liveCharts}</button>
           {played.length>0&&<button style={{...G.ghost,fontSize:12,padding:"7px 14px"}} onClick={()=>onDebrief(session.results)}>📊 {t.viewDeb}</button>}
         </div>
-        {session.scenario&&session.status==="playing"&&(
-          <div style={G.row}>
-            <span style={{...G.tag(SC[session.scenario-1]),fontSize:12}}>{t.scnNames[session.scenario]}</span>
-            <span style={{fontWeight:700,fontSize:16,color:"#1B3A4B"}}>{t.day} {session.day}</span>
-            {session.dayPhase==="open"&&<span style={{...G.tag("#2D7D52"),fontSize:11}}>● ouvert</span>}
-            {isScnEnd&&<span style={{...G.tag("#D4500A"),fontSize:11}}>{t.scnDone}</span>}
-          </div>
-        )}
+        {session.scenario&&session.status==="playing"&&(<div style={G.row}><span style={{...G.tag(SC[session.scenario-1]),fontSize:12}}>{t.scnNames[session.scenario]}</span><span style={{fontWeight:700,fontSize:16,color:"#1B3A4B"}}>{t.day} {session.day}</span>{session.dayPhase==="open"&&<span style={{...G.tag("#2D7D52"),fontSize:11}}>● ouvert</span>}{isScnEnd&&<span style={{...G.tag("#D4500A"),fontSize:11}}>{t.scnDone}</span>}</div>)}
       </div>
     </div>
-    {/* Day controls */}
-    {session.status==="playing"&&(
-      <div style={{...G.card,marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-        <div style={G.row}>
-          {session.dayPhase==="idle"&&!isScnEnd&&<button style={G.btn("#2D7D52")} onClick={openDay}>▶ {t.day} {session.day+1}</button>}
-          {session.dayPhase==="open"&&(<>
-            <span style={{fontSize:12,color:allIn?"#2D7D52":"#64748B"}}>{allIn?`✓ ${t.actsIn}`:`${humanRoles.length-gotActs} ${t.actsPend}`}</span>
-            <button style={G.btn("#D4500A")} onClick={()=>doCloseDay(null)} disabled={loading}>{loading?"…":t.forceClose}</button>
-          </>)}
-          {isScnEnd&&<button style={G.btn("#D4500A")} onClick={goNext}>{session.scenario<3?`→ ${t.nextScn}`:`📊 ${t.viewDeb}`}</button>}
-        </div>
-        {session.dayPhase==="open"&&(
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {teams.flatMap(tm=>ROLES.filter(r=>r!=="monitor").map(r=>{
-              const auto=isAuto(tm,r),got=actStatus[tm.id]?.[r];
-              const pName=tm.players[r]||'';
-              return(<span key={tm.id+r} style={{fontSize:11,padding:"2px 7px",borderRadius:4,background:auto?"#FEF3C7":got?"#DCFCE7":"#F1F5F9",color:auto?"#D4500A":got?"#2D7D52":"#94A3B8",border:`1px solid ${auto?"#F59E0B44":got?"#2D7D5244":"#E2E8F0"}`,fontWeight:600}}>
-                {auto?"🤖":got?"✓":"○"} {t.roles[r]}{pName&&` — ${pName}`}
-              </span>);
-            }))}
-          </div>
-        )}
+    {session.status==="playing"&&(<div style={{...G.card,marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+      <div style={G.row}>
+        {session.dayPhase==="idle"&&!isScnEnd&&<button style={G.btn("#2D7D52")} onClick={openDay}>▶ {t.day} {session.day+1}</button>}
+        {session.dayPhase==="open"&&(<><span style={{fontSize:12,color:allIn?"#2D7D52":"#64748B"}}>{allIn?`✓ ${t.actsIn}`:`${humanRoles.length-gotActs} ${t.actsPend}`}</span><button style={G.btn("#D4500A")} onClick={()=>doCloseDay(null)} disabled={loading}>{loading?"…":t.forceClose}</button></>)}
+        {isScnEnd&&<button style={G.btn("#D4500A")} onClick={goNext}>{session.scenario<3?`→ ${t.nextScn}`:`📊 ${t.viewDeb}`}</button>}
       </div>
-    )}
-    {/* Team dashboards */}
+      {session.dayPhase==="open"&&(<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{teams.flatMap(tm=>ROLES.filter(r=>r!=="monitor").map(r=>{const auto=isAuto(tm,r),got=actStatus[tm.id]?.[r],pName=tm.players[r]||'';return(<span key={tm.id+r} style={{fontSize:11,padding:"2px 7px",borderRadius:4,background:auto?"#FEF3C7":got?"#DCFCE7":"#F1F5F9",color:auto?"#D4500A":got?"#2D7D52":"#94A3B8",border:`1px solid ${auto?"#F59E0B44":got?"#2D7D5244":"#E2E8F0"}`,fontWeight:600}}>{auto?"🤖":got?"✓":"○"} {t.roles[r]}{pName&&` — ${pName}`}</span>);}))}</div>)}
+    </div>)}
     {teams.map(tm=><TeamDashboard key={tm.id} team={tm} t={t}/>)}
   </div>);
 }
 
-// ── STATS BOX ──
-function StatsBox({st,t,color,name}){
-  if(!st)return(<div style={{...G.card,textAlign:"center",color:"#CBD5E1",padding:20}}><div style={{fontSize:24,margin:"0 0 4px"}}>—</div><div style={{fontSize:11}}>{t.noData}</div></div>);
-  return(<div style={{...G.card,borderTop:`3px solid ${color}`}}>
-    <div style={{fontWeight:700,color,marginBottom:8,fontSize:12}}>{name}</div>
-    {[[t.count,st.count],[t.min,st.min],[t.max,st.max],[t.avg,st.avg],[t.stddev,st.stddev],[t.median,st.median]].map(([l,v])=>(
-      <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"2px 0",borderBottom:"1px solid #F8FAFC",fontSize:12}}>
-        <span style={{color:"#64748B"}}>{l}</span><span style={{fontWeight:700}}>{v}</span>
-      </div>
-    ))}
-  </div>);
-}
-
-// ── DEBRIEF ──
 function DebriefScreen({results,t,onNew}){
-  const names=t.scnNames.slice(1);
-  const scnData=[1,2,3].map(i=>results[i]?.completed||null);
-  const statsArr=scnData.map(d=>d?computeStats(d):null);
-  const scatterRef=useRef(null);const scatterChart=useRef(null);
-  const barRef=useRef(null);const barChart=useRef(null);
-
-  useEffect(()=>{
-    if(!scatterRef.current) return;
-    if(scatterChart.current){scatterChart.current.destroy();scatterChart.current=null;}
-    const datasets=scnData.map((d,i)=>d?{label:names[i],data:d.map(c=>({x:c.releaseDay,y:c.flowDays})).filter(p=>p.x!=null&&p.y!=null),backgroundColor:SC[i],pointRadius:5}:null).filter(Boolean);
-    if(!datasets.length) return;
-    scatterChart.current=new Chart(scatterRef.current,{type:"scatter",data:{datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{boxWidth:10,font:{size:11}}}},scales:{x:{title:{display:true,text:t.relDay,font:{size:11}},ticks:{stepSize:1,font:{size:10}}},y:{title:{display:true,text:t.flowDays,font:{size:11}},ticks:{stepSize:1,font:{size:10}}}}}});
-    return()=>{if(scatterChart.current){scatterChart.current.destroy();scatterChart.current=null;}};
-  },[]);
-
-  useEffect(()=>{
-    if(!barRef.current) return;
-    if(barChart.current){barChart.current.destroy();barChart.current=null;}
-    const allFlows=scnData.filter(Boolean).flatMap(d=>d.map(c=>c.flowDays).filter(v=>v!=null));
-    if(!allFlows.length) return;
-    const mx=Math.max(...allFlows);
-    const labels=Array.from({length:mx},(_,i)=>String(i+1));
-    const datasets=scnData.map((d,i)=>d?{label:names[i],data:Array.from({length:mx},(_,j)=>d.filter(c=>c.flowDays===j+1).length),backgroundColor:SC[i]}:null).filter(Boolean);
-    barChart.current=new Chart(barRef.current,{type:"bar",data:{labels,datasets},options:{responsive:false,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{boxWidth:10,font:{size:11}}}},scales:{x:{ticks:{font:{size:9}}},y:{ticks:{font:{size:10},stepSize:1}}}}});
-    return()=>{if(barChart.current){barChart.current.destroy();barChart.current=null;}};
-  },[]);
-
-  const doCSV=()=>{
-    const rows=[["Scenario","Card","Product","Routing","Release day","Completed day","Flow Days"]];
-    [1,2,3].forEach(s=>{if(results[s])results[s].completed.forEach(c=>{rows.push([t.scnNames[s],c.id,c.product,c.routing.join(">"),c.releaseDay,c.completedDay,c.flowDays]);});});
-    const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(rows.map(r=>r.join(",")).join("\n"));a.download="job-shop-game.csv";a.click();
-  };
-
+  const names=t.scnNames.slice(1);const scnData=[1,2,3].map(i=>results[i]?.completed||null);const statsArr=scnData.map(d=>d?computeStats(d):null);
+  const scatterRef=useRef(null);const scatterChart=useRef(null);const barRef=useRef(null);const barChart=useRef(null);
+  useEffect(()=>{if(!scatterRef.current)return;if(scatterChart.current){scatterChart.current.destroy();scatterChart.current=null;}const datasets=scnData.map((d,i)=>d?{label:names[i],data:d.map(c=>({x:c.releaseDay,y:c.flowDays})).filter(p=>p.x!=null&&p.y!=null),backgroundColor:SC[i],pointRadius:5}:null).filter(Boolean);if(!datasets.length)return;scatterChart.current=new Chart(scatterRef.current,{type:"scatter",data:{datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{boxWidth:10,font:{size:11}}}},scales:{x:{title:{display:true,text:t.relDay,font:{size:11}},ticks:{stepSize:1,font:{size:10}}},y:{title:{display:true,text:t.flowDays,font:{size:11}},ticks:{stepSize:1,font:{size:10}}}}}});return()=>{if(scatterChart.current){scatterChart.current.destroy();scatterChart.current=null;}};},[]);
+  useEffect(()=>{if(!barRef.current)return;if(barChart.current){barChart.current.destroy();barChart.current=null;}const allFlows=scnData.filter(Boolean).flatMap(d=>d.map(c=>c.flowDays).filter(v=>v!=null));if(!allFlows.length)return;const mx=Math.max(...allFlows);const labels=Array.from({length:mx},(_,i)=>String(i+1));const datasets=scnData.map((d,i)=>d?{label:names[i],data:Array.from({length:mx},(_,j)=>d.filter(c=>c.flowDays===j+1).length),backgroundColor:SC[i]}:null).filter(Boolean);if(!datasets.length)return;barChart.current=new Chart(barRef.current,{type:"bar",data:{labels,datasets},options:{responsive:false,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{boxWidth:10,font:{size:11}}}},scales:{x:{ticks:{font:{size:9}}},y:{ticks:{font:{size:10},stepSize:1}}}}});return()=>{if(barChart.current){barChart.current.destroy();barChart.current=null;}};},[]);
+  const doCSV=()=>{const rows=[["Scenario","Card","Product","Routing","Release day","Completed day","Flow Days"]];[1,2,3].forEach(s=>{if(results[s])results[s].completed.forEach(c=>{rows.push([t.scnNames[s],c.id,c.product,c.routing.join(">"),c.releaseDay,c.completedDay,c.flowDays]);});});const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(rows.map(r=>r.join(",")).join("\n"));a.download="job-shop-game.csv";a.click();};
   return(<div style={{padding:16,maxWidth:1100,margin:"0 auto"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:8}}>
-      <div><h2 style={{margin:"0 0 2px",color:"#1B3A4B",fontSize:20,fontWeight:700}}>{t.comparison}</h2><p style={{margin:0,color:"#64748B",fontSize:12}}>{t.title}</p></div>
-      <div className="no-print" style={G.row}>
-        <button style={G.ghost} onClick={doCSV}>⬇ {t.csv}</button>
-        <button style={G.ghost} onClick={()=>window.print()}>🖨 {t.pdf}</button>
-        {onNew&&<button style={G.btn()} onClick={onNew}>+ {t.newSess}</button>}
-      </div>
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:14}}>
-      {[0,1,2].map(i=><StatsBox key={i} st={statsArr[i]} t={t} color={SC[i]} name={`S${i+1} — ${names[i]}`}/>)}
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
-      <div style={G.card}><div style={{fontWeight:600,fontSize:12,marginBottom:6,color:"#1B3A4B"}}>{t.scatterT}</div><div style={{height:220,position:"relative"}}><canvas ref={scatterRef}/></div></div>
-      <div style={G.card}><div style={{fontWeight:600,fontSize:12,marginBottom:6,color:"#1B3A4B"}}>{t.histoT} — 1 barre/jour</div><div style={{overflowX:"auto"}}><div style={{height:220,position:"relative",minWidth:600}}><canvas ref={barRef}/></div></div></div>
-    </div>
-    <div style={G.card}>
-      <div style={{fontWeight:600,fontSize:12,marginBottom:8,color:"#1B3A4B"}}>{t.flowDays} — détail</div>
-      <div style={{overflowX:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-          <thead><tr style={{background:"#F8FAFC"}}>
-            <th style={{padding:"6px 8px",textAlign:"left",borderBottom:"2px solid #E2E8F0",color:"#64748B",fontWeight:600}}>Carte</th>
-            <th style={{padding:"6px 8px",textAlign:"left",borderBottom:"2px solid #E2E8F0",color:"#64748B",fontWeight:600}}>P</th>
-            <th style={{padding:"6px 8px",textAlign:"left",borderBottom:"2px solid #E2E8F0",color:"#64748B",fontWeight:600}}>Routage</th>
-            {names.map((n,i)=><th key={i} style={{padding:"6px 8px",textAlign:"right",borderBottom:`2px solid ${SC[i]}`,color:SC[i],fontWeight:700}}>S{i+1} {n}</th>)}
-          </tr></thead>
-          <tbody>
-            {Array.from({length:36},(_,i)=>{
-              const p=Math.floor(i/9)+1,c=(i%9)+1,id=`P${p}-${c}`;
-              const vals=[1,2,3].map(s=>results[s]?.completed?.find(x=>x.id===id)||null);
-              if(vals.every(v=>!v)) return null;
-              return(<tr key={id} style={{borderBottom:"1px solid #F1F5F9"}}>
-                <td style={{padding:"4px 8px",fontFamily:"monospace",fontWeight:700}}>{id}</td>
-                <td style={{padding:"4px 8px"}}><span style={G.tag(PC[p])}>{p}</span></td>
-                <td style={{padding:"4px 8px",fontFamily:"monospace",fontSize:10,color:"#94A3B8"}}>{ROUTINGS[p].join("→")}</td>
-                {vals.map((v,j)=><td key={j} style={{padding:"4px 8px",textAlign:"right",fontWeight:v?700:400,color:v?SC[j]:"#E2E8F0"}}>{v?v.flowDays:"—"}</td>)}
-              </tr>);
-            }).filter(Boolean)}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:8}}><div><h2 style={{margin:"0 0 2px",color:"#1B3A4B",fontSize:20,fontWeight:700}}>{t.comparison}</h2><p style={{margin:0,color:"#64748B",fontSize:12}}>{t.title}</p></div><div className="no-print" style={G.row}><button style={G.ghost} onClick={doCSV}>⬇ {t.csv}</button><button style={G.ghost} onClick={()=>window.print()}>🖨 {t.pdf}</button>{onNew&&<button style={G.btn()} onClick={onNew}>+ {t.newSess}</button>}</div></div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:14}}>{[0,1,2].map(i=>statsArr[i]?(<div key={i} style={{...G.card,borderTop:`3px solid ${SC[i]}`}}><div style={{fontWeight:700,color:SC[i],marginBottom:10,fontSize:13}}>S{i+1} — {names[i]}</div>{[[t.count,statsArr[i].count],[t.min,statsArr[i].min],[t.max,statsArr[i].max],[t.avg,statsArr[i].avg],[t.stddev,statsArr[i].stddev],[t.median,statsArr[i].median]].map(([l,v])=>(<div key={l} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid #F8FAFC",fontSize:12}}><span style={{color:"#64748B"}}>{l}</span><span style={{fontWeight:700}}>{v}</span></div>))}</div>):(<div key={i} style={{...G.card,textAlign:"center",color:"#CBD5E1",padding:24}}><div style={{fontSize:28,margin:"0 0 6px"}}>—</div><div style={{fontSize:12}}>{t.noData}</div></div>))}</div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}><div style={G.card}><div style={{fontWeight:600,fontSize:12,marginBottom:8,color:"#1B3A4B"}}>{t.scatterT}</div><div style={{height:220,position:"relative"}}><canvas ref={scatterRef}/></div></div><div style={G.card}><div style={{fontWeight:600,fontSize:12,marginBottom:8,color:"#1B3A4B"}}>{t.histoT}</div><div style={{overflowX:"auto"}}><div style={{height:220,position:"relative",minWidth:600}}><canvas ref={barRef}/></div></div></div></div>
+    <div style={G.card}><div style={{fontWeight:600,fontSize:12,marginBottom:8,color:"#1B3A4B"}}>{t.flowDays} — détail</div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#F8FAFC"}}><th style={{padding:"6px 8px",textAlign:"left",borderBottom:"2px solid #E2E8F0",color:"#64748B",fontWeight:600}}>Carte</th><th style={{padding:"6px 8px",textAlign:"left",borderBottom:"2px solid #E2E8F0",color:"#64748B",fontWeight:600}}>P</th><th style={{padding:"6px 8px",textAlign:"left",borderBottom:"2px solid #E2E8F0",color:"#64748B",fontWeight:600}}>Routage</th>{names.map((n,i)=><th key={i} style={{padding:"6px 8px",textAlign:"right",borderBottom:`2px solid ${SC[i]}`,color:SC[i],fontWeight:700}}>S{i+1} {n}</th>)}</tr></thead><tbody>{Array.from({length:40},(_,i)=>{const p=Math.floor(i/10)+1,c=(i%10)+1,id=`P${p}-${c}`;const vals=[1,2,3].map(s=>results[s]?.completed?.find(x=>x.id===id)||null);if(vals.every(v=>!v))return null;return(<tr key={id} style={{borderBottom:"1px solid #F1F5F9"}}><td style={{padding:"4px 8px",fontFamily:"monospace",fontWeight:700}}>{id}</td><td style={{padding:"4px 8px"}}><span style={G.tag(PC[p])}>{p}</span></td><td style={{padding:"4px 8px",fontFamily:"monospace",fontSize:10,color:"#94A3B8"}}>{ROUTINGS[p].join("→")}</td>{vals.map((v,j)=><td key={j} style={{padding:"4px 8px",textAlign:"right",fontWeight:v?700:400,color:v?SC[j]:"#E2E8F0"}}>{v?v.flowDays:"—"}</td>)}</tr>);}).filter(Boolean)}</tbody></table></div></div>
   </div>);
 }
 
-// ── WELCOME ──
 function WelcomeScreen({t,onStart}){
   const w=t.welcome;
   return(<div style={{...G.bg,display:"flex",flexDirection:"column",minHeight:"100vh"}}>
-    <div style={{background:"#1B3A4B",padding:"12px 24px",display:"flex",justifyContent:"center"}}>
-      <span style={{color:"rgba(255,255,255,0.5)",fontSize:12,letterSpacing:1,textTransform:"uppercase"}}>{w.tag}</span>
-    </div>
+    <div style={{background:"#1B3A4B",padding:"12px 24px",display:"flex",justifyContent:"center"}}><span style={{color:"rgba(255,255,255,0.5)",fontSize:12,letterSpacing:1,textTransform:"uppercase"}}>{w.tag}</span></div>
     <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 24px",gap:28}}>
-      <div style={{textAlign:"center"}}>
-        <div style={{fontSize:52,marginBottom:10}}>⚙</div>
-        <h1 style={{margin:"0 0 6px",color:"#1B3A4B",fontSize:34,fontWeight:800,letterSpacing:-1}}>The Job Shop Game</h1>
-        <p style={{margin:0,color:"#64748B",fontSize:14,fontStyle:"italic"}}>{w.subtitle}</p>
-      </div>
-      <div style={{display:"flex",alignItems:"center",background:"#fff",borderRadius:12,padding:"12px 20px",border:"1px solid #D9D4C8"}}>
-        {["In","A","B","C","D","Out"].map((label,i,arr)=>(<div key={label} style={{display:"flex",alignItems:"center"}}>
-          <div style={{width:label==="In"||label==="Out"?34:40,height:40,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:label==="B"?"#D4500A":label==="In"||label==="Out"?"#F0EDE6":"#1B3A4B",color:label==="In"||label==="Out"?"#64748B":"#fff",fontSize:label==="In"||label==="Out"?10:15,fontWeight:700}}>{label}</div>
-          {i<arr.length-1&&<div style={{width:14,height:2,background:"#D9D4C8"}}/>}
-        </div>))}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,maxWidth:360}}>
-        {[1,2,3,4].map(p=>(<div key={p} style={{background:"#fff",borderRadius:8,padding:"8px 12px",border:`2px solid ${PC[p]}22`,display:"flex",alignItems:"center",gap:8}}>
-          <span style={{...G.tag(PC[p]),fontSize:12}}>P{p}</span>
-          <span style={{fontSize:12,color:"#64748B",fontFamily:"monospace"}}>{ROUTINGS[p].join("→")}</span>
-        </div>))}
-      </div>
+      <div style={{textAlign:"center"}}><div style={{fontSize:52,marginBottom:10}}>⚙</div><h1 style={{margin:"0 0 6px",color:"#1B3A4B",fontSize:34,fontWeight:800,letterSpacing:-1}}>The Job Shop Game</h1><p style={{margin:0,color:"#64748B",fontSize:14,fontStyle:"italic"}}>{w.subtitle}</p></div>
+      <div style={{display:"flex",alignItems:"center",background:"#fff",borderRadius:12,padding:"12px 20px",border:"1px solid #D9D4C8"}}>{["In","A","B","C","D","Out"].map((label,i,arr)=>(<div key={label} style={{display:"flex",alignItems:"center"}}><div style={{width:label==="In"||label==="Out"?34:40,height:40,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:label==="B"?"#D4500A":label==="In"||label==="Out"?"#F0EDE6":"#1B3A4B",color:label==="In"||label==="Out"?"#64748B":"#fff",fontSize:label==="In"||label==="Out"?10:15,fontWeight:700}}>{label}</div>{i<arr.length-1&&<div style={{width:14,height:2,background:"#D9D4C8"}}/>}</div>))}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,maxWidth:360}}>{[1,2,3,4].map(p=>(<div key={p} style={{background:"#fff",borderRadius:8,padding:"8px 12px",border:`2px solid ${PC[p]}22`,display:"flex",alignItems:"center",gap:8}}><span style={{...G.tag(PC[p]),fontSize:12}}>P{p}</span><span style={{fontSize:12,color:"#64748B",fontFamily:"monospace"}}>{ROUTINGS[p].join("→")}</span></div>))}</div>
       <button style={{...G.btn("#2D7D52"),fontSize:16,padding:"14px 40px",borderRadius:8}} onClick={onStart}>{w.btn}</button>
-      <div style={{width:"100%",maxWidth:500,borderTop:"1px solid #D9D4C8",paddingTop:20,display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        {[{credit:w.credit,author:w.author,role:w.role,univ:w.univ,contact:w.contact},{credit:w.credit2,author:w.author2,role:w.role2,contact:w.contact2}].map((cr,i)=>(
-          <div key={i} style={{textAlign:"center",padding:"12px 14px",background:"#fff",borderRadius:10,border:"1px solid #D9D4C8"}}>
-            <div style={{fontSize:10,color:"#94A3B8",marginBottom:6,letterSpacing:1,textTransform:"uppercase",fontWeight:600}}>{cr.credit}</div>
-            <div style={{fontWeight:700,fontSize:13,color:"#1B3A4B",marginBottom:2}}>{cr.author}</div>
-            <div style={{fontSize:11,color:"#64748B",marginBottom:cr.univ?1:6,lineHeight:1.4}}>{cr.role}</div>
-            {cr.univ&&<div style={{fontSize:11,color:"#64748B",marginBottom:6}}>{cr.univ}</div>}
-            <a href={`mailto:${cr.contact}`} style={{fontSize:11,color:"#2563EB",textDecoration:"none"}}>{cr.contact}</a>
-          </div>
-        ))}
-      </div>
+      <div style={{width:"100%",maxWidth:500,borderTop:"1px solid #D9D4C8",paddingTop:20,display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>{[{credit:w.credit,author:w.author,role:w.role,univ:w.univ,contact:w.contact},{credit:w.credit2,author:w.author2,role:w.role2,contact:w.contact2}].map((cr,i)=>(<div key={i} style={{textAlign:"center",padding:"12px 14px",background:"#fff",borderRadius:10,border:"1px solid #D9D4C8"}}><div style={{fontSize:10,color:"#94A3B8",marginBottom:6,letterSpacing:1,textTransform:"uppercase",fontWeight:600}}>{cr.credit}</div><div style={{fontWeight:700,fontSize:13,color:"#1B3A4B",marginBottom:2}}>{cr.author}</div><div style={{fontSize:11,color:"#64748B",marginBottom:cr.univ?1:6,lineHeight:1.4}}>{cr.role}</div>{cr.univ&&<div style={{fontSize:11,color:"#64748B",marginBottom:6}}>{cr.univ}</div>}<a href={`mailto:${cr.contact}`} style={{fontSize:11,color:"#2563EB",textDecoration:"none"}}>{cr.contact}</a></div>))}</div>
     </div>
   </div>);
 }
 
-// ── CONTEXT SCREEN ──
 function ContextScreen({t,role,onReady}){
   const [tab,setTab]=useState(0);const c=t.ctx;
-  return(<div style={{...G.bg,minHeight:"100vh"}}>
-    <div style={{maxWidth:680,margin:"0 auto",padding:"24px 16px"}}>
-      <h2 style={{color:"#1B3A4B",marginBottom:4,fontSize:20}}>{c.title}</h2>
-      {role&&<div style={{marginBottom:16}}><span style={{...G.tag("#1B3A4B"),background:"#1B3A4B22",color:"#1B3A4B"}}>{t.roles[role]}</span></div>}
-      <div style={{display:"flex",borderBottom:"2px solid #D9D4C8",marginBottom:20}}>
-        {c.tabs.map((tb,i)=>(<button key={i} onClick={()=>setTab(i)} style={{padding:"8px 16px",border:"none",cursor:"pointer",fontWeight:tab===i?700:400,borderBottom:`2px solid ${tab===i?"#1B3A4B":"transparent"}`,marginBottom:-2,background:"transparent",color:tab===i?"#1B3A4B":"#64748B",fontSize:13}}>{tb}</button>))}
-      </div>
-      {tab===0&&(<div style={G.col}>
-        {c.game.map((txt,i)=><p key={i} style={{margin:0,lineHeight:1.6,color:"#374151",fontSize:14}}>{txt}</p>)}
-        <div style={{...G.card,padding:12}}><div style={{fontWeight:600,fontSize:12,color:"#1B3A4B",marginBottom:8}}>Routages</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>{[1,2,3,4].map(p=>(<div key={p} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",background:"#F8FAFC",borderRadius:6}}><span style={{...G.tag(PC[p]),fontSize:11}}>P{p}</span><span style={{fontSize:12,fontFamily:"monospace",color:"#374151"}}>{ROUTINGS[p].join("→")}</span>{p===4&&<span style={{fontSize:9,color:"#D4500A",fontWeight:700}}>2×B</span>}</div>))}</div>
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>{c.scnTitles.map((title,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 12px",background:"#fff",borderRadius:8,border:`2px solid ${SC[i]}22`}}><span style={{...G.tag(SC[i]),fontSize:11,flexShrink:0}}>{title}</span><span style={{fontSize:13,color:"#374151"}}>{c.scnTexts[i]}</span></div>))}</div>
-      </div>)}
-      {tab===1&&role&&(<div style={G.col}>
-        <div style={{...G.card,borderTop:`3px solid ${role==="wc-b"?"#D4500A":"#1B3A4B"}`}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-            <span style={{fontWeight:700,fontSize:16,color:role==="wc-b"?"#D4500A":"#1B3A4B"}}>{t.roles[role]}</span>
-            {role==="wc-b"&&<span style={{fontSize:10,background:"#D4500A",color:"#fff",padding:"2px 6px",borderRadius:3,fontWeight:700}}>{t.goulot}</span>}
-          </div>
-          <ul style={{margin:0,padding:"0 0 0 16px",display:"flex",flexDirection:"column",gap:6}}>
-            {(c.roleDetails[role]||[]).map((tip,i)=>(<li key={i} style={{fontSize:13,color:"#374151",lineHeight:1.5}}>{tip}</li>))}
-          </ul>
-        </div>
-      </div>)}
-      {tab===2&&(<div style={G.col}>
-        <div style={G.card}><div style={{fontWeight:600,fontSize:13,color:"#1B3A4B",marginBottom:12}}>{c.howTitle}</div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>{c.steps.map((step,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-            <span style={{width:22,height:22,borderRadius:"50%",background:"#1B3A4B",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>{i+1}</span>
-            <span style={{fontSize:13,color:"#374151",lineHeight:1.6,paddingTop:2}}>{step}</span>
-          </div>))}</div>
-        </div>
-      </div>)}
-      <div style={{marginTop:24,textAlign:"center"}}>
-        <button style={{...G.btn("#2D7D52"),fontSize:15,padding:"12px 32px",borderRadius:8}} onClick={onReady}>{t.readyBtn}</button>
-      </div>
-    </div>
-  </div>);
+  return(<div style={{...G.bg,minHeight:"100vh"}}><div style={{maxWidth:680,margin:"0 auto",padding:"24px 16px"}}>
+    <h2 style={{color:"#1B3A4B",marginBottom:4,fontSize:20}}>{c.title}</h2>
+    {role&&<div style={{marginBottom:16}}><span style={{...G.tag("#1B3A4B"),background:"#1B3A4B22",color:"#1B3A4B"}}>{t.roles[role]}</span></div>}
+    <div style={{display:"flex",borderBottom:"2px solid #D9D4C8",marginBottom:20}}>{c.tabs.map((tb,i)=>(<button key={i} onClick={()=>setTab(i)} style={{padding:"8px 16px",border:"none",cursor:"pointer",fontWeight:tab===i?700:400,borderBottom:`2px solid ${tab===i?"#1B3A4B":"transparent"}`,marginBottom:-2,background:"transparent",color:tab===i?"#1B3A4B":"#64748B",fontSize:13}}>{tb}</button>))}</div>
+    {tab===0&&(<div style={G.col}>{c.game.map((txt,i)=><p key={i} style={{margin:0,lineHeight:1.6,color:"#374151",fontSize:14}}>{txt}</p>)}<div style={{...G.card,padding:12}}><div style={{fontWeight:600,fontSize:12,color:"#1B3A4B",marginBottom:8}}>Routages</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>{[1,2,3,4].map(p=>(<div key={p} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",background:"#F8FAFC",borderRadius:6}}><span style={{...G.tag(PC[p]),fontSize:11}}>P{p}</span><span style={{fontSize:12,fontFamily:"monospace",color:"#374151"}}>{ROUTINGS[p].join("→")}</span>{p===4&&<span style={{fontSize:9,color:"#D4500A",fontWeight:700}}>2×B</span>}</div>))}</div></div><div style={{display:"flex",flexDirection:"column",gap:6}}>{c.scnTitles.map((title,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 12px",background:"#fff",borderRadius:8,border:`2px solid ${SC[i]}22`}}><span style={{...G.tag(SC[i]),fontSize:11,flexShrink:0}}>{title}</span><span style={{fontSize:13,color:"#374151"}}>{c.scnTexts[i]}</span></div>))}</div></div>)}
+    {tab===1&&role&&(<div style={G.col}><div style={{...G.card,borderTop:`3px solid ${role==="wc-b"?"#D4500A":"#1B3A4B"}`}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><span style={{fontWeight:700,fontSize:16,color:role==="wc-b"?"#D4500A":"#1B3A4B"}}>{t.roles[role]}</span>{role==="wc-b"&&<span style={{fontSize:10,background:"#D4500A",color:"#fff",padding:"2px 6px",borderRadius:3,fontWeight:700}}>{t.goulot}</span>}</div><p style={{margin:"0 0 12px",color:"#64748B",fontSize:13}}>{t.rdesc[role]}</p><ul style={{margin:0,padding:"0 0 0 16px",display:"flex",flexDirection:"column",gap:6}}>{(c.roleDetails[role]||[]).map((tip,i)=>(<li key={i} style={{fontSize:13,color:"#374151",lineHeight:1.5}}>{tip}</li>))}</ul></div></div>)}
+    {tab===2&&(<div style={G.col}><div style={G.card}><div style={{fontWeight:600,fontSize:13,color:"#1B3A4B",marginBottom:12}}>{c.howTitle}</div><div style={{display:"flex",flexDirection:"column",gap:8}}>{c.steps.map((step,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}><span style={{width:22,height:22,borderRadius:"50%",background:"#1B3A4B",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>{i+1}</span><span style={{fontSize:13,color:"#374151",lineHeight:1.6,paddingTop:2}}>{step}</span></div>))}</div></div></div>)}
+    <div style={{marginTop:24,textAlign:"center"}}><button style={{...G.btn("#2D7D52"),fontSize:15,padding:"12px 32px",borderRadius:8}} onClick={onReady}>{t.readyBtn}</button></div>
+  </div></div>);
 }
 
-// ── MAIN APP ──
 function App(){
   const [lang,setLang]=useState("fr");const t=I18N[lang];
-  const [facMode,setFacMode]=useState(false);
-  const [facEmail,setFacEmail]=useState(getSavedEmail());
-  const [showAccessReq,setShowAccessReq]=useState(false);
+  const [facMode,setFacMode]=useState(false);const [facEmail,setFacEmail]=useState("");
   const [name,setName]=useState("");const [codeInput,setCodeInput]=useState("");
   const [err,setErr]=useState("");const [sessionCode,setSessionCode]=useState("");
-  const [isFac,setIsFac]=useState(false);const [myTeam,setMyTeam]=useState("team1");
-  const [myRole,setMyRole]=useState("");const [session,setSession]=useState(null);
-  const [debrief,setDebrief]=useState(null);const [view,setView]=useState("welcome");
-  const [loading,setLoading]=useState(false);const [numTeams,setNumTeams]=useState(1);
-  const [numCards,setNumCards]=useState(20);const [showHelp,setShowHelp]=useState(false);
+  const [isFac,setIsFac]=useState(false);const [myTeam,setMyTeam]=useState("team1");const [myRole,setMyRole]=useState("");
+  const [session,setSession]=useState(null);const [debrief,setDebrief]=useState(null);const [view,setView]=useState("welcome");
+  const [loading,setLoading]=useState(false);const [numTeams,setNumTeams]=useState(1);const [numCards,setNumCards]=useState(20);
+  const [showHelp,setShowHelp]=useState(false);const [showCharts,setShowCharts]=useState(false);const [showAccessReq,setShowAccessReq]=useState(false);
+
+  useEffect(()=>{getSavedEmail().then(e=>{if(e)setFacEmail(e);});},[]);
 
   const doCreate=async()=>{
-    if(!facEmail.trim()){setErr("Entrez votre email animateur");return;}
-    if(!name.trim()){setErr(t.enterName);return;}
-    setLoading(true);
-    const auth=await isEmailAuthorized(facEmail.trim());
-    if(!auth){setLoading(false);setShowAccessReq(true);return;}
-    saveEmail(facEmail.trim());
-    const code=genCode();const copies=numCards/4;const teams={};
-    for(let i=1;i<=numTeams;i++) teams[`team${i}`]=mkTeam(`team${i}`,`${t.team} ${i}`,copies);
+    if(!facEmail.trim()){setErr("Entrez votre email animateur");return;}if(!name.trim()){setErr(t.enterName);return;}setLoading(true);
+    const auth=await isEmailAuthorized(facEmail.trim());if(!auth){setLoading(false);setShowAccessReq(true);return;}
+    await saveEmailDB(facEmail.trim());const code=genCode();const copies=numCards/4;const teams={};
+    for(let i=1;i<=numTeams;i++)teams[`team${i}`]=mkTeam(`team${i}`,`${t.team} ${i}`,copies);
     const ns={code,facilitatorName:name.trim(),facilitatorEmail:facEmail.trim(),scenario:null,day:0,dayPhase:"idle",status:"setup",teams,results:{1:null,2:null,3:null},lang,cardCopies:copies};
     await saveSession(code,ns);setSession(ns);setSessionCode(code);setIsFac(true);setView("context");setLoading(false);
   };
   const doJoin=async()=>{
     if(!name.trim()){setErr(t.enterName);return;}if(codeInput.length!==6){setErr(t.invalidCode);return;}setLoading(true);
-    const s=await loadSession(codeInput.toUpperCase());
-    if(!s){setErr(t.invalidCode);setLoading(false);return;}
+    const s=await loadSession(codeInput.toUpperCase());if(!s){setErr(t.invalidCode);setLoading(false);return;}
     setSession(s);setSessionCode(codeInput.toUpperCase());setView("chooseRole");setLoading(false);setErr("");
   };
   const doPickRole=async(tmId,role)=>{
@@ -1083,151 +393,68 @@ function App(){
     await saveSession(sessionCode,ns);setSession(ns);setMyTeam(tmId);setMyRole(role);setView("context");
   };
   const doStart=async()=>{const ns={...session,status:"setup"};await saveSession(sessionCode,ns);setSession(ns);setView("game");};
-  const reset=()=>{setView("welcome");setSession(null);setSessionCode("");setIsFac(false);setMyRole("");setDebrief(null);setErr("");};
+  const reset=()=>{setView("welcome");setSession(null);setSessionCode("");setIsFac(false);setMyRole("");setDebrief(null);setErr("");setShowCharts(false);};
+  const roleLabel=(role,n)=>n?`${t.roles[role]} — ${n}`:t.roles[role];
 
-  const roleLabel=(role,playerName)=>playerName?`${t.roles[role]} — ${playerName}`:t.roles[role];
-
-  // Access request modal
-  const AccessReqModal=()=>(
-    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-      <div style={{background:"#fff",borderRadius:12,padding:24,maxWidth:420,width:"100%"}}>
-        <div style={{fontSize:20,marginBottom:4,textAlign:"center"}}>🔒</div>
-        <h3 style={{margin:"0 0 8px",color:"#1B3A4B",textAlign:"center"}}>Accès non autorisé</h3>
-        <p style={{fontSize:13,color:"#64748B",textAlign:"center",marginBottom:16}}>L'adresse <b>{facEmail}</b> n'est pas dans la liste des animateurs autorisés.</p>
-        <a href={`mailto:${ADMIN_EMAIL}?subject=Demande%20accès%20Job%20Shop%20Game&body=Bonjour%2C%0A%0AJe%20souhaite%20obtenir%20l'accès%20animateur%20au%20Job%20Shop%20Game.%0A%0AEmail%20à%20autoriser%20%3A%20${encodeURIComponent(facEmail)}%0A%0AMerci.`}
-          style={{display:"block",textAlign:"center",background:"#1B3A4B",color:"#fff",padding:"10px 20px",borderRadius:8,textDecoration:"none",fontWeight:600,fontSize:14,marginBottom:10}}>
-          ✉️ Demander l'accès à {ADMIN_EMAIL}
-        </a>
-        <button style={{...G.ghost,width:"100%"}} onClick={()=>setShowAccessReq(false)}>Fermer</button>
-      </div>
-    </div>
-  );
+  const AccessReqModal=()=>(<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}><div style={{background:"#fff",borderRadius:12,padding:24,maxWidth:420,width:"100%"}}><div style={{fontSize:24,marginBottom:4,textAlign:"center"}}>🔒</div><h3 style={{margin:"0 0 8px",color:"#1B3A4B",textAlign:"center"}}>Accès non autorisé</h3><p style={{fontSize:13,color:"#64748B",textAlign:"center",marginBottom:16}}>L'adresse <b>{facEmail}</b> n'est pas dans la liste des animateurs autorisés.</p><a href={`mailto:${ADMIN_EMAIL}?subject=Demande%20accès%20Job%20Shop%20Game&body=Bonjour%2C%0A%0AJe%20souhaite%20obtenir%20l'accès%20animateur%20au%20Job%20Shop%20Game.%0A%0AEmail%20à%20autoriser%20%3A%20${encodeURIComponent(facEmail)}%0A%0AMerci.`} style={{display:"block",textAlign:"center",background:"#1B3A4B",color:"#fff",padding:"10px 20px",borderRadius:8,textDecoration:"none",fontWeight:600,fontSize:14,marginBottom:10}}>✉️ Demander l'accès</a><button style={{...G.ghost,width:"100%"}} onClick={()=>setShowAccessReq(false)}>Fermer</button></div></div>);
 
   const Header=()=>(<div style={G.hdr}>
-    <div style={{display:"flex",alignItems:"center",gap:8}}>
-      <span>⚙</span><span style={{fontWeight:700,fontSize:14}}>{t.title}</span>
-      {sessionCode&&<span style={{fontSize:11,opacity:0.5,fontFamily:"monospace",marginLeft:4}}>{sessionCode}</span>}
-    </div>
+    <div style={{display:"flex",alignItems:"center",gap:8}}><span>⚙</span><span style={{fontWeight:700,fontSize:14}}>{t.title}</span>{sessionCode&&<span style={{fontSize:11,opacity:0.5,fontFamily:"monospace",marginLeft:4}}>{sessionCode}</span>}</div>
     <div style={G.row}>
       {session&&isFac&&<span style={{...G.tag("#F59E0B"),fontSize:11}}>{t.fac} — {name}</span>}
       {session&&!isFac&&myRole&&<span style={{...G.tag("#93C5FD"),fontSize:11}}>{roleLabel(myRole,name)}</span>}
+      {view==="game"&&session&&!isFac&&<button onClick={()=>setShowCharts(true)} style={{background:"rgba(255,255,255,0.15)",color:"#fff",border:"1px solid rgba(255,255,255,0.3)",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:11}}>📊</button>}
       {view==="game"&&<button onClick={()=>setShowHelp(true)} style={{background:"rgba(255,255,255,0.15)",color:"#fff",border:"1px solid rgba(255,255,255,0.3)",borderRadius:"50%",width:26,height:26,cursor:"pointer",fontWeight:700,fontSize:12,padding:0}}>?</button>}
       <button onClick={()=>setLang(lang==="fr"?"en":"fr")} style={{background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,0.25)",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:11}}>{lang==="fr"?"EN":"FR"}</button>
       {view!=="welcome"&&view!=="landing"&&<button onClick={reset} style={{background:"transparent",color:"rgba(255,255,255,0.4)",border:"none",cursor:"pointer",fontSize:13}}>✕</button>}
     </div>
   </div>);
 
-  if(view==="welcome") return <WelcomeScreen t={t} onStart={()=>setView("landing")}/>;
-
-  if(view==="landing") return(<div style={G.bg}>
-    {showAccessReq&&<AccessReqModal/>}
-    <Header/>
-    <div style={G.center}>
-      <div><div style={{fontSize:28,marginBottom:4}}>⚙</div><h1 style={{margin:"0 0 4px",color:"#1B3A4B",fontSize:22,fontWeight:800}}>{t.title}</h1><p style={{margin:0,color:"#64748B",fontSize:13}}>{t.sub}</p></div>
-      <div style={{...G.card,width:"100%",maxWidth:380}}>
-        {!facMode?(
-          // ── PLAYER JOIN (default) ──
-          <div>
-            <div style={{marginBottom:14}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.yourName}</label><input style={G.inp} value={name} onChange={e=>setName(e.target.value)} placeholder={t.yourName} autoFocus onKeyDown={e=>e.key==="Enter"&&doJoin()}/></div>
-            <div style={{marginBottom:14}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.code}</label><input style={{...G.inp,fontFamily:"'Courier New',monospace",textAlign:"center",fontSize:22,letterSpacing:8}} value={codeInput} onChange={e=>setCodeInput(e.target.value.toUpperCase())} placeholder="· · · · · ·" maxLength={6} onKeyDown={e=>e.key==="Enter"&&doJoin()}/></div>
-            {err&&<div style={{color:"#D4500A",fontSize:12,marginBottom:8,textAlign:"center"}}>{err}</div>}
-            <button style={{...G.btn("#D4500A"),width:"100%",padding:"11px",fontSize:14}} onClick={doJoin} disabled={loading}>{loading?"…":t.joinBtn}</button>
-            <div style={{textAlign:"center",marginTop:14}}>
-              <button onClick={()=>{setFacMode(true);setErr("");}} style={{background:"none",border:"none",color:"#94A3B8",fontSize:12,cursor:"pointer",textDecoration:"underline"}}>
-                Accès animateur →
-              </button>
-            </div>
-          </div>
-        ):(
-          // ── FACILITATOR CREATE ──
-          <div>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-              <button onClick={()=>{setFacMode(false);setErr("");}} style={{background:"none",border:"none",color:"#64748B",cursor:"pointer",fontSize:18,padding:0}}>←</button>
-              <span style={{fontWeight:700,color:"#1B3A4B",fontSize:14}}>Espace animateur</span>
-            </div>
-            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>Email animateur</label><input style={G.inp} type="email" value={facEmail} onChange={e=>setFacEmail(e.target.value)} placeholder="votre@email.com"/></div>
-            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.yourName}</label><input style={G.inp} value={name} onChange={e=>setName(e.target.value)} placeholder={t.yourName}/></div>
-            <div style={{marginBottom:10}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.numTeams}</label>
-              <div style={{display:"flex",gap:6}}>{[1,2,3].map(n=><button key={n} onClick={()=>setNumTeams(n)} style={{flex:1,padding:"8px",border:`2px solid ${numTeams===n?"#1B3A4B":"#D9D4C8"}`,borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:15,background:numTeams===n?"#1B3A4B":"#fff",color:numTeams===n?"#fff":"#64748B"}}>{n}</button>)}</div>
-            </div>
-            <div style={{marginBottom:14}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.numCards}</label>
-              <div style={{display:"flex",gap:6}}>{[20,32,40].map(n=><button key={n} onClick={()=>setNumCards(n)} style={{flex:1,padding:"8px",border:`2px solid ${numCards===n?"#1B3A4B":"#D9D4C8"}`,borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:13,background:numCards===n?"#1B3A4B":"#fff",color:numCards===n?"#fff":"#64748B"}}>{n}</button>)}</div>
-            </div>
-            {err&&<div style={{color:"#D4500A",fontSize:12,marginBottom:8,textAlign:"center"}}>{err}</div>}
-            <button style={{...G.btn("#1B3A4B"),width:"100%",padding:"11px",fontSize:14}} onClick={doCreate} disabled={loading}>{loading?"…":t.createBtn}</button>
-          </div>
-        )}
-      </div>
+  if(view==="welcome")return <WelcomeScreen t={t} onStart={()=>setView("landing")}/>;
+  if(view==="landing")return(<div style={G.bg}>{showAccessReq&&<AccessReqModal/>}<Header/><div style={G.center}>
+    <div><div style={{fontSize:28,marginBottom:4}}>⚙</div><h1 style={{margin:"0 0 4px",color:"#1B3A4B",fontSize:22,fontWeight:800}}>{t.title}</h1><p style={{margin:0,color:"#64748B",fontSize:13}}>{t.sub}</p></div>
+    <div style={{...G.card,width:"100%",maxWidth:380}}>
+      {!facMode?(<div>
+        <div style={{marginBottom:14}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.yourName}</label><input style={G.inp} value={name} onChange={e=>setName(e.target.value)} placeholder={t.yourName} autoFocus onKeyDown={e=>e.key==="Enter"&&doJoin()}/></div>
+        <div style={{marginBottom:14}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.code}</label><input style={{...G.inp,fontFamily:"'Courier New',monospace",textAlign:"center",fontSize:22,letterSpacing:8}} value={codeInput} onChange={e=>setCodeInput(e.target.value.toUpperCase())} placeholder="· · · · · ·" maxLength={6} onKeyDown={e=>e.key==="Enter"&&doJoin()}/></div>
+        {err&&<div style={{color:"#D4500A",fontSize:12,marginBottom:8,textAlign:"center"}}>{err}</div>}
+        <button style={{...G.btn("#D4500A"),width:"100%",padding:"11px",fontSize:14}} onClick={doJoin} disabled={loading}>{loading?"…":t.joinBtn}</button>
+        <div style={{textAlign:"center",marginTop:14}}><button onClick={()=>{setFacMode(true);setErr("");}} style={{background:"none",border:"none",color:"#94A3B8",fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Accès animateur →</button></div>
+      </div>):(<div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}><button onClick={()=>{setFacMode(false);setErr("");}} style={{background:"none",border:"none",color:"#64748B",cursor:"pointer",fontSize:18,padding:0}}>←</button><span style={{fontWeight:700,color:"#1B3A4B",fontSize:14}}>Espace animateur</span></div>
+        <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>Email animateur</label><input style={G.inp} type="email" value={facEmail} onChange={e=>setFacEmail(e.target.value)} placeholder="votre@email.com"/></div>
+        <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.yourName}</label><input style={G.inp} value={name} onChange={e=>setName(e.target.value)} placeholder={t.yourName}/></div>
+        <div style={{marginBottom:10}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.numTeams}</label><div style={{display:"flex",gap:6}}>{[1,2,3].map(n=><button key={n} onClick={()=>setNumTeams(n)} style={{flex:1,padding:"8px",border:`2px solid ${numTeams===n?"#1B3A4B":"#D9D4C8"}`,borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:15,background:numTeams===n?"#1B3A4B":"#fff",color:numTeams===n?"#fff":"#64748B"}}>{n}</button>)}</div></div>
+        <div style={{marginBottom:14}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.numCards}</label><div style={{display:"flex",gap:6}}>{[20,32,40].map(n=><button key={n} onClick={()=>setNumCards(n)} style={{flex:1,padding:"8px",border:`2px solid ${numCards===n?"#1B3A4B":"#D9D4C8"}`,borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:13,background:numCards===n?"#1B3A4B":"#fff",color:numCards===n?"#fff":"#64748B"}}>{n}</button>)}</div></div>
+        {err&&<div style={{color:"#D4500A",fontSize:12,marginBottom:8,textAlign:"center"}}>{err}</div>}
+        <button style={{...G.btn("#1B3A4B"),width:"100%",padding:"11px",fontSize:14}} onClick={doCreate} disabled={loading}>{loading?"…":t.createBtn}</button>
+      </div>)}
     </div>
-  </div>);
+  </div></div>);
 
-  if(view==="chooseRole"&&session) return(<div style={G.bg}><Header/>
-    <div style={{padding:"20px 16px",maxWidth:580,margin:"0 auto"}}>
-      <h3 style={{color:"#1B3A4B",marginBottom:16,fontSize:16}}>{t.chooseRole}</h3>
-      {Object.keys(session.teams).map(tk=>{const tm=session.teams[tk];return(<div key={tk} style={{...G.card,marginBottom:12}}>
-        <div style={{fontWeight:700,marginBottom:10}}>{tm.name}</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {ROLES.map(role=>{const taken=!!tm.players[role],isB=role==="wc-b";return(
-            <button key={role} disabled={taken} style={{background:taken?"#F8FAFC":isB?"#FFFBEB":"#FAFAF8",border:`2px solid ${taken?"#F1F5F9":isB?"#D4500A":"#D9D4C8"}`,borderRadius:8,padding:"10px",cursor:taken?"default":"pointer",textAlign:"left",opacity:taken?0.5:1}} onClick={()=>!taken&&doPickRole(tk,role)}>
-              <div style={{fontWeight:700,fontSize:13,color:taken?"#CBD5E1":isB?"#D4500A":"#1B3A4B",display:"flex",alignItems:"center",gap:4}}>{taken?"✓ ":""}{t.roles[role]}{isB&&!taken&&<span style={{fontSize:9,background:"#D4500A",color:"#fff",padding:"1px 4px",borderRadius:3}}>{t.goulot}</span>}</div>
-              {taken?<div style={{fontSize:11,color:"#CBD5E1"}}>{tm.players[role]}</div>:<div style={{fontSize:11,color:"#94A3B8",marginTop:2}}>{t.rdesc[role]}</div>}
-            </button>);
-          })}
-        </div>
-      </div>);})}
-      {err&&<div style={{color:"#D4500A",fontSize:12}}>{err}</div>}
-    </div>
-  </div>);
+  if(view==="chooseRole"&&session)return(<div style={G.bg}><Header/><div style={{padding:"20px 16px",maxWidth:580,margin:"0 auto"}}>
+    <h3 style={{color:"#1B3A4B",marginBottom:16,fontSize:16}}>{t.chooseRole}</h3>
+    {Object.keys(session.teams).map(tk=>{const tm=session.teams[tk];return(<div key={tk} style={{...G.card,marginBottom:12}}><div style={{fontWeight:700,marginBottom:10}}>{tm.name}</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{ROLES.map(role=>{const taken=!!tm.players[role],isB=role==="wc-b";return(<button key={role} disabled={taken} style={{background:taken?"#F8FAFC":isB?"#FFFBEB":"#FAFAF8",border:`2px solid ${taken?"#F1F5F9":isB?"#D4500A":"#D9D4C8"}`,borderRadius:8,padding:"10px",cursor:taken?"default":"pointer",textAlign:"left",opacity:taken?0.5:1}} onClick={()=>!taken&&doPickRole(tk,role)}><div style={{fontWeight:700,fontSize:13,color:taken?"#CBD5E1":isB?"#D4500A":"#1B3A4B",display:"flex",alignItems:"center",gap:4}}>{taken?"✓ ":""}{t.roles[role]}{isB&&!taken&&<span style={{fontSize:9,background:"#D4500A",color:"#fff",padding:"1px 4px",borderRadius:3}}>{t.goulot}</span>}</div>{taken?<div style={{fontSize:11,color:"#2D7D52",fontWeight:600}}>{tm.players[role]}</div>:<div style={{fontSize:11,color:"#94A3B8",marginTop:2}}>{t.rdesc[role]}</div>}</button>);})}</div></div>);})}
+    {err&&<div style={{color:"#D4500A",fontSize:12}}>{err}</div>}
+  </div></div>);
 
-  if(view==="context") return(<div style={G.bg}><Header/><ContextScreen t={t} role={myRole} onReady={()=>{if(isFac)setView("lobby");else if(session?.status==="playing")setView("game");else setView("lobby");}}/></div>);
+  if(view==="context")return(<div style={G.bg}><Header/><ContextScreen t={t} role={myRole} onReady={()=>{if(isFac)setView("lobby");else if(session?.status==="playing")setView("game");else setView("lobby");}}/></div>);
 
   if(view==="lobby"&&session){
-    // Separate component to safely use hooks
-    function LobbyPoller(){
-      useEffect(()=>{
-        if(isFac) return;
-        const iv=setInterval(async()=>{
-          const ns=await loadSession(sessionCode);
-          if(!ns) return;
-          setSession(ns);
-          if(ns.status==="playing"&&ns.scenario) setView("game");
-        },2500);
-        return()=>clearInterval(iv);
-      },[]);
-      return null;
-    }
-    return(<div style={G.bg}><Header/>
-      <LobbyPoller/>
-      <div style={{padding:"20px 16px",maxWidth:540,margin:"0 auto"}}>
-        <div style={{...G.card,marginBottom:16,textAlign:"center"}}>
-          <div style={{fontSize:11,color:"#64748B",marginBottom:6,fontWeight:600,letterSpacing:1,textTransform:"uppercase"}}>{t.shareCode}</div>
-          <div style={{fontFamily:"'Courier New',monospace",fontSize:44,fontWeight:700,color:"#1B3A4B",letterSpacing:14,padding:"4px 0"}}>{sessionCode}</div>
-        </div>
-        {Object.values(session.teams).map(tm=>(<div key={tm.id} style={{...G.card,marginBottom:12}}>
-          <div style={{fontWeight:700,marginBottom:8}}>{tm.name}</div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-            {ROLES.map(role=>{const pl=tm.players[role],auto=isAuto(tm,role);return(
-              <div key={role} style={{background:pl?"#DCFCE7":auto?"#FEF3C7":"#F8FAFC",border:`1px solid ${pl?"#2D7D5244":auto?"#F59E0B44":"#E2E8F0"}`,borderRadius:6,padding:"4px 10px",fontSize:12}}>
-                <span style={{color:"#64748B"}}>{t.roles[role]}</span>
-                {pl&&<span style={{fontWeight:700,color:"#2D7D52"}}> — {pl}</span>}
-                {!pl&&auto&&<span style={{fontWeight:600,color:"#D4500A"}}> 🤖</span>}
-                {!pl&&!auto&&<span style={{color:"#CBD5E1"}}> —</span>}
-              </div>);
-            })}
-          </div>
-        </div>))}
-        {isFac&&<button style={{...G.btn("#2D7D52"),width:"100%",padding:"13px",fontSize:15}} onClick={doStart}>▶ {t.start}</button>}
-        {!isFac&&<div style={{textAlign:"center",color:"#64748B",fontSize:13,padding:12}}>⏳ {t.waitStart}</div>}
-      </div>
-    </div>);
+    function LobbyPoller(){useEffect(()=>{if(isFac)return;const iv=setInterval(async()=>{const ns=await loadSession(sessionCode);if(!ns)return;setSession(ns);if(ns.status==="playing"&&ns.scenario)setView("game");},2500);return()=>clearInterval(iv);},[]);return null;}
+    return(<div style={G.bg}><Header/><LobbyPoller/><div style={{padding:"20px 16px",maxWidth:540,margin:"0 auto"}}>
+      <div style={{...G.card,marginBottom:16,textAlign:"center"}}><div style={{fontSize:11,color:"#64748B",marginBottom:6,fontWeight:600,letterSpacing:1,textTransform:"uppercase"}}>{t.shareCode}</div><div style={{fontFamily:"'Courier New',monospace",fontSize:44,fontWeight:700,color:"#1B3A4B",letterSpacing:14,padding:"4px 0"}}>{sessionCode}</div></div>
+      {Object.values(session.teams).map(tm=>(<div key={tm.id} style={{...G.card,marginBottom:12}}><div style={{fontWeight:700,marginBottom:8}}>{tm.name}</div><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{ROLES.map(role=>{const pl=tm.players[role],auto=isAuto(tm,role);return(<div key={role} style={{background:pl?"#DCFCE7":auto?"#FEF3C7":"#F8FAFC",border:`1px solid ${pl?"#2D7D5244":auto?"#F59E0B44":"#E2E8F0"}`,borderRadius:6,padding:"4px 10px",fontSize:12}}><span style={{color:"#64748B"}}>{t.roles[role]}</span>{pl&&<span style={{fontWeight:700,color:"#2D7D52"}}> — {pl}</span>}{!pl&&auto&&<span style={{fontWeight:600,color:"#D4500A"}}> 🤖</span>}{!pl&&!auto&&<span style={{color:"#CBD5E1"}}> —</span>}</div>);})}</div></div>))}
+      {isFac&&<button style={{...G.btn("#2D7D52"),width:"100%",padding:"13px",fontSize:15}} onClick={doStart}>▶ {t.start}</button>}
+      {!isFac&&<div style={{textAlign:"center",color:"#64748B",fontSize:13,padding:12}}>⏳ {t.waitStart}</div>}
+    </div></div>);
   }
 
   if(view==="game"&&session){
     const team=session.teams[myTeam];
     return(<div style={G.bg}><Header/>
       {showHelp&&(<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:1000,overflowY:"auto"}}><div style={{maxWidth:600,margin:"40px auto",padding:"0 16px 40px"}}><ContextScreen t={t} role={myRole} onReady={()=>setShowHelp(false)}/></div></div>)}
+      {showCharts&&<LiveChartsModal session={session} t={t} onClose={()=>setShowCharts(false)}/>}
       {isFac?<FacilitatorView session={session} onUpdate={setSession} t={t} onDebrief={r=>{setDebrief(r);setView("debrief");}}/>
         :!team?<div style={G.center}>{t.waitStart}</div>
         :myRole==="scheduler"?<SchedulerView session={session} team={team} t={t} onUpdate={setSession}/>
@@ -1237,11 +464,7 @@ function App(){
     </div>);
   }
 
-  if(view==="debrief"){
-    const res=debrief||session?.results||{};
-    return(<div style={G.bg}><Header/><DebriefScreen results={res} t={t} onNew={reset}/></div>);
-  }
-
+  if(view==="debrief"){const res=debrief||session?.results||{};return(<div style={G.bg}><Header/><DebriefScreen results={res} t={t} onNew={reset}/></div>);}
   return <div style={G.bg}><Header/><div style={G.center}>…</div></div>;
 }
 
