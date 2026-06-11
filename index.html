@@ -279,6 +279,22 @@ async function loadSession(code){const snap=await db.ref(`sessions/jsg-${code}`)
 async function saveAction(code,team,role,day,action){await db.ref(`actions/jsg-${code}-${team}-${role}-${day}`).set({json:JSON.stringify({action,ts:Date.now()})});}
 async function loadAllActions(code,teamId,day){const acts={};for(const role of ROLES){const snap=await db.ref(`actions/jsg-${code}-${teamId}-${role}-${day}`).get();if(snap.exists())acts[role]=JSON.parse(snap.val().json).action;}return acts;}
 
+// ── ADMIN / WHITELIST ──
+const ADMIN_EMAIL="bdemarcq.consulting@outlook.com";
+
+async function isEmailAuthorized(email){
+  try{
+    const snap=await db.ref('admin/whitelist').get();
+    if(!snap.exists())return false;
+    const val=snap.val();
+    const norm=email.toLowerCase().trim();
+    return Object.values(val).some(v=>typeof v==="string"&&v.toLowerCase().trim()===norm);
+  }catch(e){return false;}
+}
+
+function getSavedEmail(){try{return localStorage.getItem('jsg_fac_email')||'';}catch(e){return '';}}
+function saveEmail(email){try{localStorage.setItem('jsg_fac_email',email);}catch(e){}}
+
 // ── STYLES ──
 const G={
   bg:{background:"#EDEAE0",minHeight:"100vh",fontFamily:"system-ui,-apple-system,sans-serif",color:"#1A1A1A"},
@@ -838,8 +854,9 @@ function FacilitatorView({session,onUpdate,t,onDebrief}){
           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
             {teams.flatMap(tm=>ROLES.filter(r=>r!=="monitor").map(r=>{
               const auto=isAuto(tm,r),got=actStatus[tm.id]?.[r];
+              const pName=tm.players[r]||'';
               return(<span key={tm.id+r} style={{fontSize:11,padding:"2px 7px",borderRadius:4,background:auto?"#FEF3C7":got?"#DCFCE7":"#F1F5F9",color:auto?"#D4500A":got?"#2D7D52":"#94A3B8",border:`1px solid ${auto?"#F59E0B44":got?"#2D7D5244":"#E2E8F0"}`,fontWeight:600}}>
-                {auto?"🤖":got?"✓":"○"} {t.roles[r]}
+                {auto?"🤖":got?"✓":"○"} {t.roles[r]}{pName&&` — ${pName}`}
               </span>);
             }))}
           </div>
@@ -1031,7 +1048,9 @@ function ContextScreen({t,role,onReady}){
 // ── MAIN APP ──
 function App(){
   const [lang,setLang]=useState("fr");const t=I18N[lang];
-  const [tab,setTab]=useState("create");
+  const [facMode,setFacMode]=useState(false);
+  const [facEmail,setFacEmail]=useState(getSavedEmail());
+  const [showAccessReq,setShowAccessReq]=useState(false);
   const [name,setName]=useState("");const [codeInput,setCodeInput]=useState("");
   const [err,setErr]=useState("");const [sessionCode,setSessionCode]=useState("");
   const [isFac,setIsFac]=useState(false);const [myTeam,setMyTeam]=useState("team1");
@@ -1041,10 +1060,15 @@ function App(){
   const [numCards,setNumCards]=useState(20);const [showHelp,setShowHelp]=useState(false);
 
   const doCreate=async()=>{
-    if(!name.trim()){setErr(t.enterName);return;}setLoading(true);
+    if(!facEmail.trim()){setErr("Entrez votre email animateur");return;}
+    if(!name.trim()){setErr(t.enterName);return;}
+    setLoading(true);
+    const auth=await isEmailAuthorized(facEmail.trim());
+    if(!auth){setLoading(false);setShowAccessReq(true);return;}
+    saveEmail(facEmail.trim());
     const code=genCode();const copies=numCards/4;const teams={};
     for(let i=1;i<=numTeams;i++) teams[`team${i}`]=mkTeam(`team${i}`,`${t.team} ${i}`,copies);
-    const ns={code,facilitatorName:name.trim(),scenario:null,day:0,dayPhase:"idle",status:"setup",teams,results:{1:null,2:null,3:null},lang,cardCopies:copies};
+    const ns={code,facilitatorName:name.trim(),facilitatorEmail:facEmail.trim(),scenario:null,day:0,dayPhase:"idle",status:"setup",teams,results:{1:null,2:null,3:null},lang,cardCopies:copies};
     await saveSession(code,ns);setSession(ns);setSessionCode(code);setIsFac(true);setView("context");setLoading(false);
   };
   const doJoin=async()=>{
@@ -1061,14 +1085,32 @@ function App(){
   const doStart=async()=>{const ns={...session,status:"setup"};await saveSession(sessionCode,ns);setSession(ns);setView("game");};
   const reset=()=>{setView("welcome");setSession(null);setSessionCode("");setIsFac(false);setMyRole("");setDebrief(null);setErr("");};
 
+  const roleLabel=(role,playerName)=>playerName?`${t.roles[role]} — ${playerName}`:t.roles[role];
+
+  // Access request modal
+  const AccessReqModal=()=>(
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#fff",borderRadius:12,padding:24,maxWidth:420,width:"100%"}}>
+        <div style={{fontSize:20,marginBottom:4,textAlign:"center"}}>🔒</div>
+        <h3 style={{margin:"0 0 8px",color:"#1B3A4B",textAlign:"center"}}>Accès non autorisé</h3>
+        <p style={{fontSize:13,color:"#64748B",textAlign:"center",marginBottom:16}}>L'adresse <b>{facEmail}</b> n'est pas dans la liste des animateurs autorisés.</p>
+        <a href={`mailto:${ADMIN_EMAIL}?subject=Demande%20accès%20Job%20Shop%20Game&body=Bonjour%2C%0A%0AJe%20souhaite%20obtenir%20l'accès%20animateur%20au%20Job%20Shop%20Game.%0A%0AEmail%20à%20autoriser%20%3A%20${encodeURIComponent(facEmail)}%0A%0AMerci.`}
+          style={{display:"block",textAlign:"center",background:"#1B3A4B",color:"#fff",padding:"10px 20px",borderRadius:8,textDecoration:"none",fontWeight:600,fontSize:14,marginBottom:10}}>
+          ✉️ Demander l'accès à {ADMIN_EMAIL}
+        </a>
+        <button style={{...G.ghost,width:"100%"}} onClick={()=>setShowAccessReq(false)}>Fermer</button>
+      </div>
+    </div>
+  );
+
   const Header=()=>(<div style={G.hdr}>
     <div style={{display:"flex",alignItems:"center",gap:8}}>
       <span>⚙</span><span style={{fontWeight:700,fontSize:14}}>{t.title}</span>
       {sessionCode&&<span style={{fontSize:11,opacity:0.5,fontFamily:"monospace",marginLeft:4}}>{sessionCode}</span>}
     </div>
     <div style={G.row}>
-      {session&&isFac&&<span style={{...G.tag("#F59E0B"),fontSize:11}}>{t.fac}</span>}
-      {session&&!isFac&&myRole&&<span style={{...G.tag("#93C5FD"),fontSize:11}}>{t.roles[myRole]}</span>}
+      {session&&isFac&&<span style={{...G.tag("#F59E0B"),fontSize:11}}>{t.fac} — {name}</span>}
+      {session&&!isFac&&myRole&&<span style={{...G.tag("#93C5FD"),fontSize:11}}>{roleLabel(myRole,name)}</span>}
       {view==="game"&&<button onClick={()=>setShowHelp(true)} style={{background:"rgba(255,255,255,0.15)",color:"#fff",border:"1px solid rgba(255,255,255,0.3)",borderRadius:"50%",width:26,height:26,cursor:"pointer",fontWeight:700,fontSize:12,padding:0}}>?</button>}
       <button onClick={()=>setLang(lang==="fr"?"en":"fr")} style={{background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,0.25)",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:11}}>{lang==="fr"?"EN":"FR"}</button>
       {view!=="welcome"&&view!=="landing"&&<button onClick={reset} style={{background:"transparent",color:"rgba(255,255,255,0.4)",border:"none",cursor:"pointer",fontSize:13}}>✕</button>}
@@ -1077,29 +1119,46 @@ function App(){
 
   if(view==="welcome") return <WelcomeScreen t={t} onStart={()=>setView("landing")}/>;
 
-  if(view==="landing") return(<div style={G.bg}><Header/>
+  if(view==="landing") return(<div style={G.bg}>
+    {showAccessReq&&<AccessReqModal/>}
+    <Header/>
     <div style={G.center}>
       <div><div style={{fontSize:28,marginBottom:4}}>⚙</div><h1 style={{margin:"0 0 4px",color:"#1B3A4B",fontSize:22,fontWeight:800}}>{t.title}</h1><p style={{margin:0,color:"#64748B",fontSize:13}}>{t.sub}</p></div>
       <div style={{...G.card,width:"100%",maxWidth:380}}>
-        <div style={{marginBottom:14}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.yourName}</label><input style={G.inp} value={name} onChange={e=>setName(e.target.value)} placeholder={t.yourName} autoFocus onKeyDown={e=>e.key==="Enter"&&(tab==="create"?doCreate():doJoin())}/></div>
-        <div style={{display:"flex",borderRadius:8,overflow:"hidden",border:"1.5px solid #D9D4C8",marginBottom:14}}>
-          {["create","join"].map((tb,i)=>(<button key={tb} onClick={()=>{setTab(tb);setErr("");}} style={{flex:1,padding:"8px",border:"none",cursor:"pointer",fontWeight:600,fontSize:13,background:tab===tb?"#1B3A4B":"#FAFAF8",color:tab===tb?"#fff":"#64748B"}}>{i===0?t.create:t.join}</button>))}
-        </div>
-        {tab==="create"&&(
-          <div style={{marginBottom:14}}>
+        {!facMode?(
+          // ── PLAYER JOIN (default) ──
+          <div>
+            <div style={{marginBottom:14}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.yourName}</label><input style={G.inp} value={name} onChange={e=>setName(e.target.value)} placeholder={t.yourName} autoFocus onKeyDown={e=>e.key==="Enter"&&doJoin()}/></div>
+            <div style={{marginBottom:14}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.code}</label><input style={{...G.inp,fontFamily:"'Courier New',monospace",textAlign:"center",fontSize:22,letterSpacing:8}} value={codeInput} onChange={e=>setCodeInput(e.target.value.toUpperCase())} placeholder="· · · · · ·" maxLength={6} onKeyDown={e=>e.key==="Enter"&&doJoin()}/></div>
+            {err&&<div style={{color:"#D4500A",fontSize:12,marginBottom:8,textAlign:"center"}}>{err}</div>}
+            <button style={{...G.btn("#D4500A"),width:"100%",padding:"11px",fontSize:14}} onClick={doJoin} disabled={loading}>{loading?"…":t.joinBtn}</button>
+            <div style={{textAlign:"center",marginTop:14}}>
+              <button onClick={()=>{setFacMode(true);setErr("");}} style={{background:"none",border:"none",color:"#94A3B8",fontSize:12,cursor:"pointer",textDecoration:"underline"}}>
+                Accès animateur →
+              </button>
+            </div>
+          </div>
+        ):(
+          // ── FACILITATOR CREATE ──
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+              <button onClick={()=>{setFacMode(false);setErr("");}} style={{background:"none",border:"none",color:"#64748B",cursor:"pointer",fontSize:18,padding:0}}>←</button>
+              <span style={{fontWeight:700,color:"#1B3A4B",fontSize:14}}>Espace animateur</span>
+            </div>
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>Email animateur</label><input style={G.inp} type="email" value={facEmail} onChange={e=>setFacEmail(e.target.value)} placeholder="votre@email.com"/></div>
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.yourName}</label><input style={G.inp} value={name} onChange={e=>setName(e.target.value)} placeholder={t.yourName}/></div>
             <div style={{marginBottom:10}}>
               <label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.numTeams}</label>
               <div style={{display:"flex",gap:6}}>{[1,2,3].map(n=><button key={n} onClick={()=>setNumTeams(n)} style={{flex:1,padding:"8px",border:`2px solid ${numTeams===n?"#1B3A4B":"#D9D4C8"}`,borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:15,background:numTeams===n?"#1B3A4B":"#fff",color:numTeams===n?"#fff":"#64748B"}}>{n}</button>)}</div>
             </div>
-            <div>
+            <div style={{marginBottom:14}}>
               <label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.numCards}</label>
               <div style={{display:"flex",gap:6}}>{[20,32,40].map(n=><button key={n} onClick={()=>setNumCards(n)} style={{flex:1,padding:"8px",border:`2px solid ${numCards===n?"#1B3A4B":"#D9D4C8"}`,borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:13,background:numCards===n?"#1B3A4B":"#fff",color:numCards===n?"#fff":"#64748B"}}>{n}</button>)}</div>
             </div>
+            {err&&<div style={{color:"#D4500A",fontSize:12,marginBottom:8,textAlign:"center"}}>{err}</div>}
+            <button style={{...G.btn("#1B3A4B"),width:"100%",padding:"11px",fontSize:14}} onClick={doCreate} disabled={loading}>{loading?"…":t.createBtn}</button>
           </div>
         )}
-        {tab==="join"&&(<div style={{marginBottom:14}}><label style={{fontSize:12,fontWeight:600,color:"#64748B",display:"block",marginBottom:4}}>{t.code}</label><input style={{...G.inp,fontFamily:"'Courier New',monospace",textAlign:"center",fontSize:22,letterSpacing:8}} value={codeInput} onChange={e=>setCodeInput(e.target.value.toUpperCase())} placeholder="· · · · · ·" maxLength={6} onKeyDown={e=>e.key==="Enter"&&doJoin()}/></div>)}
-        {err&&<div style={{color:"#D4500A",fontSize:12,marginBottom:8,textAlign:"center"}}>{err}</div>}
-        <button style={{...G.btn(tab==="create"?"#1B3A4B":"#D4500A"),width:"100%",padding:"11px",fontSize:14}} onClick={tab==="create"?doCreate:doJoin} disabled={loading}>{loading?"…":(tab==="create"?t.createBtn:t.joinBtn)}</button>
       </div>
     </div>
   </div>);
@@ -1124,27 +1183,46 @@ function App(){
 
   if(view==="context") return(<div style={G.bg}><Header/><ContextScreen t={t} role={myRole} onReady={()=>{if(isFac)setView("lobby");else if(session?.status==="playing")setView("game");else setView("lobby");}}/></div>);
 
-  if(view==="lobby"&&session) return(<div style={G.bg}><Header/>
-    <div style={{padding:"20px 16px",maxWidth:540,margin:"0 auto"}}>
-      <div style={{...G.card,marginBottom:16,textAlign:"center"}}>
-        <div style={{fontSize:11,color:"#64748B",marginBottom:6,fontWeight:600,letterSpacing:1,textTransform:"uppercase"}}>{t.shareCode}</div>
-        <div style={{fontFamily:"'Courier New',monospace",fontSize:44,fontWeight:700,color:"#1B3A4B",letterSpacing:14,padding:"4px 0"}}>{sessionCode}</div>
-      </div>
-      {Object.values(session.teams).map(tm=>(<div key={tm.id} style={{...G.card,marginBottom:12}}>
-        <div style={{fontWeight:700,marginBottom:8}}>{tm.name}</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-          {ROLES.map(role=>{const pl=tm.players[role],auto=isAuto(tm,role);return(
-            <div key={role} style={{background:pl?"#DCFCE7":auto?"#FEF3C7":"#F8FAFC",border:`1px solid ${pl?"#2D7D5244":auto?"#F59E0B44":"#E2E8F0"}`,borderRadius:6,padding:"4px 10px",fontSize:12}}>
-              <span style={{color:"#64748B"}}>{t.roles[role]}: </span>
-              <span style={{fontWeight:600,color:pl?"#2D7D52":auto?"#D4500A":"#CBD5E1"}}>{pl||auto?"🤖":"—"}</span>
-            </div>);
-          })}
+  if(view==="lobby"&&session){
+    // Separate component to safely use hooks
+    function LobbyPoller(){
+      useEffect(()=>{
+        if(isFac) return;
+        const iv=setInterval(async()=>{
+          const ns=await loadSession(sessionCode);
+          if(!ns) return;
+          setSession(ns);
+          if(ns.status==="playing"&&ns.scenario) setView("game");
+        },2500);
+        return()=>clearInterval(iv);
+      },[]);
+      return null;
+    }
+    return(<div style={G.bg}><Header/>
+      <LobbyPoller/>
+      <div style={{padding:"20px 16px",maxWidth:540,margin:"0 auto"}}>
+        <div style={{...G.card,marginBottom:16,textAlign:"center"}}>
+          <div style={{fontSize:11,color:"#64748B",marginBottom:6,fontWeight:600,letterSpacing:1,textTransform:"uppercase"}}>{t.shareCode}</div>
+          <div style={{fontFamily:"'Courier New',monospace",fontSize:44,fontWeight:700,color:"#1B3A4B",letterSpacing:14,padding:"4px 0"}}>{sessionCode}</div>
         </div>
-      </div>))}
-      {isFac&&<button style={{...G.btn("#2D7D52"),width:"100%",padding:"13px",fontSize:15}} onClick={doStart}>▶ {t.start}</button>}
-      {!isFac&&<div style={{textAlign:"center",color:"#64748B",fontSize:13,padding:12}}>{t.waitStart}</div>}
-    </div>
-  </div>);
+        {Object.values(session.teams).map(tm=>(<div key={tm.id} style={{...G.card,marginBottom:12}}>
+          <div style={{fontWeight:700,marginBottom:8}}>{tm.name}</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {ROLES.map(role=>{const pl=tm.players[role],auto=isAuto(tm,role);return(
+              <div key={role} style={{background:pl?"#DCFCE7":auto?"#FEF3C7":"#F8FAFC",border:`1px solid ${pl?"#2D7D5244":auto?"#F59E0B44":"#E2E8F0"}`,borderRadius:6,padding:"4px 10px",fontSize:12}}>
+                <span style={{color:"#64748B"}}>{t.roles[role]}</span>
+                {pl&&<span style={{fontWeight:700,color:"#2D7D52"}}> — {pl}</span>}
+                {!pl&&auto&&<span style={{fontWeight:600,color:"#D4500A"}}> 🤖</span>}
+                {!pl&&!auto&&<span style={{color:"#CBD5E1"}}> —</span>}
+              </div>);
+            })}
+          </div>
+        </div>))}
+        {isFac&&<button style={{...G.btn("#2D7D52"),width:"100%",padding:"13px",fontSize:15}} onClick={doStart}>▶ {t.start}</button>}
+        {!isFac&&<div style={{textAlign:"center",color:"#64748B",fontSize:13,padding:12}}>⏳ {t.waitStart}</div>}
+      </div>
+    </div>);
+  }
 
   if(view==="game"&&session){
     const team=session.teams[myTeam];
