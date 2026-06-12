@@ -82,8 +82,8 @@ function getHumanRoles(team){return ROLES.filter(r=>r!=="monitor"&&!isAuto(team,
 
 async function saveSession(code,state){await db.ref(`sessions/jsg-${code}`).set({json:JSON.stringify(state)});}
 async function loadSession(code){const snap=await db.ref(`sessions/jsg-${code}`).get();if(!snap.exists())return null;return JSON.parse(snap.val().json);}
-async function saveAction(code,team,role,day,action){await db.ref(`actions/jsg-${code}-${team}-${role}-${day}`).set({json:JSON.stringify({action,ts:Date.now()})});}
-async function loadAllActions(code,teamId,day){const acts={};for(const role of ROLES){const snap=await db.ref(`actions/jsg-${code}-${teamId}-${role}-${day}`).get();if(snap.exists())acts[role]=JSON.parse(snap.val().json).action;}return acts;}
+async function saveAction(code,scn,team,role,day,action){await db.ref(`actions/jsg-${code}-s${scn}-${team}-${role}-${day}`).set({json:JSON.stringify({action,ts:Date.now()})});}
+async function loadAllActions(code,scn,teamId,day){const acts={};for(const role of ROLES){const snap=await db.ref(`actions/jsg-${code}-s${scn}-${teamId}-${role}-${day}`).get();if(snap.exists())acts[role]=JSON.parse(snap.val().json).action;}return acts;}
 async function isEmailAuthorized(email){try{const snap=await db.ref('admin/whitelist').get();if(!snap.exists())return false;const val=snap.val();const norm=email.toLowerCase().trim();return Object.values(val).some(v=>typeof v==="string"&&v.toLowerCase().trim()===norm);}catch(e){return false;}}
 async function getSavedEmail(){try{const s=await db.ref('admin/last_fac_email').get();return s.exists()?s.val():'';}catch(e){return '';}}
 async function saveEmailDB(email){try{await db.ref('admin/last_fac_email').set(email);}catch(e){}}
@@ -188,7 +188,7 @@ function SchedulerView({session,team,t,onUpdate}){
   const [selectedCard,setSelectedCard]=useState(null);const [submitted,setSubmitted]=useState(false);const [pendingCard,setPendingCard]=useState(null);const [dragOver,setDragOver]=useState(false);const [bufInput,setBufInput]=useState(team.bufferLimit||5);
   useEffect(()=>{setSubmitted(false);setSelectedCard(null);setPendingCard(null);},[session.day,session.dayPhase]);
   useEffect(()=>{const iv=setInterval(async()=>{const ns=await loadSession(session.code);if(ns&&(ns.day!==session.day||ns.dayPhase!==session.dayPhase))onUpdate(ns);},2500);return()=>clearInterval(iv);},[session.code,session.day,session.dayPhase]);
-  const submit=async(action,card)=>{if(card)setPendingCard(card);setSubmitted(true);await saveAction(session.code,team.id,"scheduler",session.day,action);};
+  const submit=async(action,card)=>{if(card)setPendingCard(card);setSubmitted(true);await saveAction(session.code,session.scenario,team.id,"scheduler",session.day,action);};
   const saveBuffer=async(val)=>{setBufInput(val);const ns=JSON.parse(JSON.stringify(session));Object.values(ns.teams).forEach(tm=>{tm.bufferLimit=val;});await saveSession(session.code,ns);onUpdate(ns);};
   const isDayOpen=session.dayPhase==="open";const isS3=session.scenario===3;const bufferLocked=team.bufferLimit!=null;const limit=team.bufferLimit||bufInput||5;
   const handleDrop=async(e)=>{e.preventDefault();setDragOver(false);if(submitted||!isDayOpen)return;const cardId=e.dataTransfer.getData("cardId");if(!cardId)return;const card=team.deck.find(c=>c.id===cardId);await submit(`release:${cardId}`,card);};
@@ -225,7 +225,7 @@ function OperatorView({session,team,role,t,onUpdate}){
   const submit=async(cardId)=>{
     const card=myQueue.find(c=>c.id===cardId);
     if(card){const processed=JSON.parse(JSON.stringify(card));processed.ops[processed.currentOpIdx].dayComplete=session.day;processed.ops[processed.currentOpIdx].done=true;setDroppedCard(processed);}
-    setSubmitted(true);setSelectedCard(cardId);await saveAction(session.code,team.id,role,session.day,cardId||'pass');
+    setSubmitted(true);setSelectedCard(cardId);await saveAction(session.code,session.scenario,team.id,role,session.day,cardId||'pass');
   };
   const handleDrop=async(e)=>{e.preventDefault();setDragOver(false);if(submitted||!isDayOpen)return;const cardId=e.dataTransfer.getData("cardId");if(cardId)await submit(cardId);};
   return(<div style={{padding:16}}>
@@ -265,7 +265,7 @@ function FacilitatorView({session,onUpdate,t,onDebrief}){
   useEffect(()=>{
     if(session.dayPhase!=="open")return;
     const iv=setInterval(async()=>{
-      const st={};for(const tm of teams)st[tm.id]=await loadAllActions(session.code,tm.id,session.day);setActStatus(st);
+      const st={};for(const tm of teams)st[tm.id]=await loadAllActions(session.code,session.scenario,tm.id,session.day);setActStatus(st);
       const humanRoles=teams.flatMap(tm=>getHumanRoles(tm));const gotActs=teams.reduce((n,tm)=>n+Object.keys(st[tm.id]||{}).filter(r=>r!=="monitor"&&!isAuto(tm,r)).length,0);
       if(gotActs>=humanRoles.length&&humanRoles.length>0)doCloseDay(st);
     },2500);
@@ -274,7 +274,7 @@ function FacilitatorView({session,onUpdate,t,onDebrief}){
   const doCloseDay=async(acts)=>{
     if(loading)return;setLoading(true);
     const updTeams={...session.teams};
-    for(const tm of teams){const a=acts||await loadAllActions(session.code,tm.id,session.day);updTeams[tm.id]=applyDay(tm,session.day,session.scenario,a);}
+    for(const tm of teams){const a=acts||await loadAllActions(session.code,session.scenario,tm.id,session.day);updTeams[tm.id]=applyDay(tm,session.day,session.scenario,a);}
     const allDone=Object.values(updTeams).every(tm=>tm.deck.length===0&&WCS.every(wc=>tm.queues[wc].length===0));
     const ns={...session,teams:updTeams,dayPhase:allDone?"scnEnd":"idle"};
     await saveSession(session.code,ns);onUpdate(ns);setLoading(false);
@@ -388,11 +388,19 @@ function App(){
     setSession(s);setSessionCode(codeInput.toUpperCase());setView("chooseRole");setLoading(false);setErr("");
   };
   const doPickRole=async(tmId,role)=>{
-    if(session.teams[tmId]?.players[role]){setErr(t.roleTaken);return;}
-    const ns=JSON.parse(JSON.stringify(session));ns.teams[tmId].players[role]=name.trim();
-    await saveSession(sessionCode,ns);setSession(ns);setMyTeam(tmId);setMyRole(role);setView("context");
+    setLoading(true);
+    const fresh=await loadSession(sessionCode);
+    if(!fresh){setErr(t.invalidCode);setLoading(false);return;}
+    if(fresh.teams[tmId]?.players[role]){setErr(t.roleTaken);setSession(fresh);setLoading(false);return;}
+    const ns=JSON.parse(JSON.stringify(fresh));ns.teams[tmId].players[role]=name.trim();
+    await saveSession(sessionCode,ns);setSession(ns);setMyTeam(tmId);setMyRole(role);setView("context");setLoading(false);
   };
-  const doStart=async()=>{const ns={...session,status:"setup"};await saveSession(sessionCode,ns);setSession(ns);setView("game");};
+  const doStart=async()=>{
+    const fresh=await loadSession(sessionCode);
+    const base=fresh||session;
+    const ns={...base,status:"setup"};
+    await saveSession(sessionCode,ns);setSession(ns);setView("game");
+  };
   const reset=()=>{setView("welcome");setSession(null);setSessionCode("");setIsFac(false);setMyRole("");setDebrief(null);setErr("");setShowCharts(false);};
   const roleLabel=(role,n)=>n?`${t.roles[role]} — ${n}`:t.roles[role];
 
@@ -441,7 +449,7 @@ function App(){
   if(view==="context")return(<div style={G.bg}><Header/><ContextScreen t={t} role={myRole} onReady={()=>{if(isFac)setView("lobby");else if(session?.status==="playing")setView("game");else setView("lobby");}}/></div>);
 
   if(view==="lobby"&&session){
-    function LobbyPoller(){useEffect(()=>{if(isFac)return;const iv=setInterval(async()=>{const ns=await loadSession(sessionCode);if(!ns)return;setSession(ns);if(ns.status==="playing"&&ns.scenario)setView("game");},2500);return()=>clearInterval(iv);},[]);return null;}
+    function LobbyPoller(){useEffect(()=>{const iv=setInterval(async()=>{const ns=await loadSession(sessionCode);if(!ns)return;setSession(ns);if(!isFac&&ns.status==="playing"&&ns.scenario)setView("game");},2500);return()=>clearInterval(iv);},[]);return null;}
     return(<div style={G.bg}><Header/><LobbyPoller/><div style={{padding:"20px 16px",maxWidth:540,margin:"0 auto"}}>
       <div style={{...G.card,marginBottom:16,textAlign:"center"}}><div style={{fontSize:11,color:"#64748B",marginBottom:6,fontWeight:600,letterSpacing:1,textTransform:"uppercase"}}>{t.shareCode}</div><div style={{fontFamily:"'Courier New',monospace",fontSize:44,fontWeight:700,color:"#1B3A4B",letterSpacing:14,padding:"4px 0"}}>{sessionCode}</div></div>
       {Object.values(session.teams).map(tm=>(<div key={tm.id} style={{...G.card,marginBottom:12}}><div style={{fontWeight:700,marginBottom:8}}>{tm.name}</div><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{ROLES.map(role=>{const pl=tm.players[role],auto=isAuto(tm,role);return(<div key={role} style={{background:pl?"#DCFCE7":auto?"#FEF3C7":"#F8FAFC",border:`1px solid ${pl?"#2D7D5244":auto?"#F59E0B44":"#E2E8F0"}`,borderRadius:6,padding:"4px 10px",fontSize:12}}><span style={{color:"#64748B"}}>{t.roles[role]}</span>{pl&&<span style={{fontWeight:700,color:"#2D7D52"}}> — {pl}</span>}{!pl&&auto&&<span style={{fontWeight:600,color:"#D4500A"}}> 🤖</span>}{!pl&&!auto&&<span style={{color:"#CBD5E1"}}> —</span>}</div>);})}</div></div>))}
