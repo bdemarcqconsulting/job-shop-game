@@ -187,7 +187,7 @@ function LiveChartsModal({session,t,onClose}){
 function SchedulerView({session,team,t,onUpdate}){
   const [selectedCard,setSelectedCard]=useState(null);const [submitted,setSubmitted]=useState(false);const [pendingCard,setPendingCard]=useState(null);const [dragOver,setDragOver]=useState(false);const [bufInput,setBufInput]=useState(team.bufferLimit||5);
   useEffect(()=>{setSubmitted(false);setSelectedCard(null);setPendingCard(null);},[session.day,session.dayPhase]);
-  useEffect(()=>{const iv=setInterval(async()=>{const ns=await loadSession(session.code);if(ns&&(ns.day!==session.day||ns.dayPhase!==session.dayPhase))onUpdate(ns);},2500);return()=>clearInterval(iv);},[session.code,session.day,session.dayPhase]);
+  useEffect(()=>{const iv=setInterval(async()=>{const ns=await loadSession(session.code);if(ns&&(ns.day!==session.day||ns.dayPhase!==session.dayPhase||JSON.stringify(ns.teams[team.id]?.deck?.length)!==JSON.stringify(session.teams?.[team.id]?.deck?.length)))onUpdate(ns);},2500);return()=>clearInterval(iv);},[session.code,session.day,session.dayPhase]);
   const submit=async(action,card)=>{if(card)setPendingCard(card);setSubmitted(true);await saveAction(session.code,session.scenario,team.id,"scheduler",session.day,action);};
   const saveBuffer=async(val)=>{setBufInput(val);const ns=JSON.parse(JSON.stringify(session));Object.values(ns.teams).forEach(tm=>{tm.bufferLimit=val;});await saveSession(session.code,ns);onUpdate(ns);};
   const isDayOpen=session.dayPhase==="open";const isS3=session.scenario===3;const bufferLocked=team.bufferLimit!=null;const limit=team.bufferLimit||bufInput||5;
@@ -220,7 +220,7 @@ function SchedulerView({session,team,t,onUpdate}){
 function OperatorView({session,team,role,t,onUpdate}){
   const [selectedCard,setSelectedCard]=useState(null);const [submitted,setSubmitted]=useState(false);const [droppedCard,setDroppedCard]=useState(null);const [dragOver,setDragOver]=useState(false);
   useEffect(()=>{setSubmitted(false);setSelectedCard(null);setDroppedCard(null);},[session.day,session.dayPhase]);
-  useEffect(()=>{const iv=setInterval(async()=>{const ns=await loadSession(session.code);if(ns&&(ns.day!==session.day||ns.dayPhase!==session.dayPhase))onUpdate(ns);},2500);return()=>clearInterval(iv);},[session.code,session.day,session.dayPhase]);
+  useEffect(()=>{const iv=setInterval(async()=>{const ns=await loadSession(session.code);if(ns&&(ns.day!==session.day||ns.dayPhase!==session.dayPhase||JSON.stringify(ns.teams[team.id]?.queues)!==JSON.stringify(session.teams?.[team.id]?.queues)))onUpdate(ns);},2500);return()=>clearInterval(iv);},[session.code,session.day,session.dayPhase]);
   const wcKey=role.split("-")[1].toUpperCase();const myQueue=team.queues[wcKey]||[];const isDayOpen=session.dayPhase==="open";const isS3=session.scenario===3;const limit=team.bufferLimit||5;
   const submit=async(cardId)=>{
     const card=myQueue.find(c=>c.id===cardId);
@@ -262,6 +262,14 @@ function MonitorView({session,team,t,onUpdate}){
 function FacilitatorView({session,onUpdate,t,onDebrief}){
   const [actStatus,setActStatus]=useState({});const [loading,setLoading]=useState(false);const [showCharts,setShowCharts]=useState(false);
   const teams=Object.values(session.teams||{});
+  // General session sync — keeps facilitator fresh at all times
+  useEffect(()=>{
+    const iv=setInterval(async()=>{
+      const ns=await loadSession(session.code);
+      if(ns&&(ns.day!==session.day||ns.dayPhase!==session.dayPhase||ns.scenario!==session.scenario))onUpdate(ns);
+    },3000);
+    return()=>clearInterval(iv);
+  },[session.code]);
   useEffect(()=>{
     if(session.dayPhase!=="open")return;
     const iv=setInterval(async()=>{
@@ -273,18 +281,25 @@ function FacilitatorView({session,onUpdate,t,onDebrief}){
   },[session.dayPhase,session.day]);
   const doCloseDay=async(acts)=>{
     if(loading)return;setLoading(true);
-    const updTeams={...session.teams};
-    for(const tm of teams){const a=acts||await loadAllActions(session.code,session.scenario,tm.id,session.day);updTeams[tm.id]=applyDay(tm,session.day,session.scenario,a);}
+    // Reload fresh session to avoid stale closure — critical fix
+    const fresh=await loadSession(session.code)||session;
+    const freshTeams=Object.values(fresh.teams);
+    const updTeams={...fresh.teams};
+    for(const tm of freshTeams){
+      const a=acts||await loadAllActions(fresh.code,fresh.scenario,tm.id,fresh.day);
+      updTeams[tm.id]=applyDay(tm,fresh.day,fresh.scenario,a);
+    }
     const allDone=Object.values(updTeams).every(tm=>tm.deck.length===0&&WCS.every(wc=>tm.queues[wc].length===0));
-    const ns={...session,teams:updTeams,dayPhase:allDone?"scnEnd":"idle"};
-    await saveSession(session.code,ns);onUpdate(ns);setLoading(false);
+    const ns={...fresh,teams:updTeams,dayPhase:allDone?"scnEnd":"idle"};
+    await saveSession(fresh.code,ns);onUpdate(ns);setLoading(false);
   };
   const openDay=async()=>{const ns={...session,dayPhase:"open",day:session.day+1};setActStatus({});await saveSession(session.code,ns);onUpdate(ns);};
   const startScenario=async(scnNum)=>{
-    const copies=session.cardCopies||5;const newTeams={};
-    let s1Deck=null;if(scnNum===3&&session.results&&session.results[1]&&session.results[1].deck)s1Deck=session.results[1].deck;
-    Object.values(session.teams).forEach(tm=>{const deck=s1Deck?JSON.parse(JSON.stringify(s1Deck)):mkDeck(copies);newTeams[tm.id]={...tm,deck,queues:{A:[],B:[],C:[],D:[]},completed:[],bufferB:0,bufferLimit:scnNum===3?null:tm.bufferLimit};});
-    const ns={...session,scenario:scnNum,day:0,dayPhase:"idle",status:"playing",teams:newTeams};await saveSession(session.code,ns);onUpdate(ns);
+    const fresh=await loadSession(session.code)||session;
+    const copies=fresh.cardCopies||5;const newTeams={};
+    let s1Deck=null;if(scnNum===3&&fresh.results&&fresh.results[1]&&fresh.results[1].deck)s1Deck=fresh.results[1].deck;
+    Object.values(fresh.teams).forEach(tm=>{const deck=s1Deck?JSON.parse(JSON.stringify(s1Deck)):mkDeck(copies);newTeams[tm.id]={...tm,deck,queues:{A:[],B:[],C:[],D:[]},completed:[],bufferB:0,bufferLimit:scnNum===3?null:tm.bufferLimit};});
+    const ns={...fresh,scenario:scnNum,day:0,dayPhase:"idle",status:"playing",teams:newTeams};await saveSession(fresh.code,ns);onUpdate(ns);
   };
   const goNext=async()=>{
     const res={...session.results};
