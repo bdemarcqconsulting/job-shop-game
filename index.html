@@ -286,8 +286,8 @@ function FacilitatorView({session,onUpdate,t,onDebrief}){
     const freshTeams=Object.values(fresh.teams);
     const updTeams={...fresh.teams};
     for(const tm of freshTeams){
-      const a=acts||await loadAllActions(fresh.code,fresh.scenario,tm.id,fresh.day);
-      updTeams[tm.id]=applyDay(tm,fresh.day,fresh.scenario,a);
+      const a=acts?acts[tm.id]:await loadAllActions(fresh.code,fresh.scenario,tm.id,fresh.day);
+      updTeams[tm.id]=applyDay(tm,fresh.day,fresh.scenario,a||{});
     }
     const allDone=Object.values(updTeams).every(tm=>tm.deck.length===0&&WCS.every(wc=>tm.queues[wc].length===0));
     const ns={...fresh,teams:updTeams,dayPhase:allDone?"scnEnd":"idle"};
