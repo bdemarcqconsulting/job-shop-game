@@ -13,7 +13,7 @@
   <style>*{box-sizing:border-box;margin:0;padding:0;}body{background:#EDEAE0;} @media print{.no-print{display:none!important}body{background:#fff}}</style>
 </head>
 <body><div id="root"></div>
-<script type="text/babel">
+<script type="text/plain" id="app-source">
 const {useState,useEffect,useRef}=React;
 const firebaseConfig={databaseURL:"https://job-shop-game-default-rtdb.europe-west1.firebasedatabase.app"};
 firebase.initializeApp(firebaseConfig);
@@ -492,6 +492,13 @@ function App(){
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+<script>
+(function(){
+  var src = document.getElementById('app-source').textContent;
+  var out = Babel.transform(src, {presets: [["react", {runtime: "classic"}]]}).code;
+  (0, eval)(out);
+})();
 </script>
 </body>
 </html>
